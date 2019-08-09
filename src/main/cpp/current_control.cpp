@@ -202,6 +202,15 @@ void current_control::controller::start() {
     find_pd_offset_and_type(measure_inputs.position, measure_inputs.pd);
     find_pd_offset_and_type(measure_inputs.torque, measure_inputs.pd);
     find_pd_offset_and_type(command_outputs.current, command_outputs.pd);
+
+    // create process data 
+    size_t cc_outputs_struct_length = with_torque ? sizeof(pos_tor_outputs_t) : sizeof(pos_outputs_t);
+    string cc_ctrl_outputs_desc = with_torque ? pos_tor_outputs_desc : pos_outputs_desc;
+    string pd_ctrl_outputs_desc = command_outputs.pd->process_data_definition + cc_ctrl_outputs_desc;
+    pd_ctrl_outputs = make_shared<triple_buffer>(command_outputs.pd->length + cc_outputs_struct_length, 
+            parent->name, format_string("%s.outputs", name.c_str()), pd_ctrl_outputs_desc);
+    pd_ctrl_outputs_hash = pd_ctrl_outputs->set_consumer(shared_from_this());
+    k.add_device(pd_ctrl_outputs);
 }
 
 //! destroying process data input and trigger
@@ -226,7 +235,7 @@ inline double filter_first_order(double time, double x_n, double t_const, double
 //! trigger tick
 void current_control::controller::tick() {
     auto msr_buf = measure_inputs.pd->pop(measure_inputs.pd_hash);
-    auto ctrl_inputs_buf = pd_ctrl_inputs->pop(pd_ctrl_inputs_hash);
+    auto ctrl_outputs_buf = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
 
     double q_msr = 0., dq_msr = 0., dq_msr_filt = 0.,
            tau_msr = 0., dtau_msr = 0., dtau_msr_filt = 0.;
@@ -244,7 +253,7 @@ void current_control::controller::tick() {
     dq_msr = (q_msr - q_msr_old);
     dq_msr_filt = filter_first_order(ts, dq_msr, filter_t_const, &dq_msr_filt_old) / ts;
 
-    auto tmp = ((pos_inputs_t *)ctrl_inputs_buf);
+    auto tmp = ((pos_outputs_t *)ctrl_outputs_buf);
     q_des = tmp->target_pos;
 
     if (tmp->mode == 1) {
@@ -260,7 +269,7 @@ void current_control::controller::tick() {
         dtau_des = (tau_des - tau_des_old) / ts;
         dtau_des_filt = filter_first_order(ts, dtau_des, filter_t_const, &dtau_des_filt_old);
 
-        auto tmp = ((pos_tor_inputs_t *)ctrl_inputs_buf);
+        auto tmp = ((pos_tor_outputs_t *)ctrl_outputs_buf);
         tau_des = tmp->target_tor;
 
         if (tmp->mode == 1) {
@@ -302,6 +311,7 @@ void current_control::controller::tick() {
     if (des_current < -5.0)
         des_current = -5.0;
 
+    memcpy(&local_outputs[0], &ctrl_outputs_buf[0], command_outputs.pd->length);
     double_to_val(&local_outputs[0], command_outputs.current, des_current);
     command_outputs.pd->write(command_outputs.pd_hash, 0, &local_outputs[0], local_outputs.size()); 
 

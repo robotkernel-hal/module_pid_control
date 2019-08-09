@@ -54,24 +54,6 @@ class current_control :
     public robotkernel::module_base
 {
     public:
-        /*
-         *  controller:
-         *    measure_inputs:
-         *      dev_name: <name>
-         *      position: { name: <name>, offset: 0, type: uint32_t )
-         *      torque: { name: <name>, offset: 0, type: uint32_t )
-         *
-         *      pd_input_device: <name>
-         *      pd_output_device: <name>
-         *      outputs:
-         *      -   name: left
-         *          len: 8
-         *      -   name: right
-         *          len: 8
-         *
-         *
-         */
-
         class controller : 
             public std::enable_shared_from_this<controller>,
             public robotkernel::trigger_base,
@@ -80,41 +62,29 @@ class current_control :
             public service_provider::process_data_inspection::base
         {
             public:
-                class output {
-                    public: 
-                        output(const std::string& name, const uint32_t& len) :
-                            name(name), len(len), pdout(nullptr), pdtr(nullptr)
-                        {
-                        }
-
-                        std::string name;
-                        uint32_t len;
-                        robotkernel::sp_process_data_t pdout;
-                        robotkernel::sp_trigger_t      pdtr;
-                        ssize_t hash;
-                };
+                std::string name;
 
                 typedef struct pd_item {
-                    std::string name;
-                    off_t offset;
-                    std::string type_str;
-                    pd_data_types type;
-                    double scale;
+                    std::string name;                   //!< field name of process data item
+                    off_t offset;                       //!< offset of process data field
+                    std::string type_str;               //!< data type name of field
+                    pd_data_types type;                 //!< data type of field
+                    double scale;                       //!< field scaling
                 } pd_item_t;
 
                 struct {
-                    std::string dev_name;
-                    robotkernel::sp_process_data_t pd;
-                    size_t pd_hash;
-                    pd_item position;
-                    pd_item torque;
+                    std::string dev_name;               //!< process data device name
+                    robotkernel::sp_process_data_t pd;  //!< process data device from other module
+                    size_t pd_hash;                     //!< consumer hash
+                    pd_item position;                   //!< position field in process data
+                    pd_item torque;                     //!< torque field in process data
                 } measure_inputs;
 
                 struct {
-                    std::string dev_name;
-                    robotkernel::sp_process_data_t pd;
-                    size_t pd_hash;
-                    pd_item current;
+                    std::string dev_name;               //!< process data device name
+                    robotkernel::sp_process_data_t pd;  //!< process data device from other module
+                    size_t pd_hash;                     //!< provider hash
+                    pd_item current;                    //!< current field in process data
                 } command_outputs;
 
                 bool with_torque;
@@ -122,29 +92,29 @@ class current_control :
 
                 std::vector<uint8_t> local_outputs;
 
-                const std::string pos_inputs_desc = 
-                    "- uint32_t: mode\n"
-                    "- double: target_pos\n"
-                    "- double: gain_pos_proportional\n"
-                    "- double: gain_pos_derivative\n";
+                const std::string pos_outputs_desc = 
+                    "- uint32_t: cc_mode\n"
+                    "- double: cc_target_pos\n"
+                    "- double: cc_gain_pos_proportional\n"
+                    "- double: cc_gain_pos_derivative\n";
 
-                typedef struct __attribute__((__packed__)) pos_inputs {
+                typedef struct __attribute__((__packed__)) pos_outputs {
                     uint32_t mode;
                     double target_pos;
                     double gain_pos_proportional;
                     double gain_pos_derivative;
-                } __attribute__((__packed__)) pos_inputs_t;
+                } __attribute__((__packed__)) pos_outputs_t;
 
-                const std::string pos_tor_inputs_desc = 
-                    "- uint32_t: mode\n"
-                    "- double: target_pos\n"
-                    "- double: gain_pos_proportional\n"
-                    "- double: gain_pos_derivative\n"
-                    "- double: target_tor\n"
-                    "- double: gain_tor_proportional\n"
-                    "- double: gain_tor_derivative\n";
+                const std::string pos_tor_outputs_desc = 
+                    "- uint32_t: cc_mode\n"
+                    "- double: cc_target_pos\n"
+                    "- double: cc_gain_pos_proportional\n"
+                    "- double: cc_gain_pos_derivative\n"
+                    "- double: cc_target_tor\n"
+                    "- double: cc_gain_tor_proportional\n"
+                    "- double: cc_gain_tor_derivative\n";
 
-                typedef struct __attribute__((__packed__)) pos_tor_inputs {
+                typedef struct __attribute__((__packed__)) pos_tor_outputs {
                     uint32_t mode;
                     double target_pos;
                     double gain_pos_proportional;
@@ -152,10 +122,10 @@ class current_control :
                     double target_tor;
                     double gain_tor_proportional;
                     double gain_tor_derivative;
-                } __attribute__((__packed__)) pos_tor_inputs_t;
+                } __attribute__((__packed__)) pos_tor_outputs_t;
 
-                robotkernel::sp_process_data_t pd_ctrl_inputs;
-                size_t pd_ctrl_inputs_hash;
+                robotkernel::sp_process_data_t pd_ctrl_outputs;
+                size_t pd_ctrl_outputs_hash;
 
             private:
                 double filter_freq;
@@ -179,14 +149,6 @@ class current_control :
                 double dtau_des_filt_old;
 
                 std::shared_ptr<current_control> parent;
-                std::list<output> outputs;
-                std::string name; 
-
-                struct {
-                    std::string                     name;
-                    ssize_t                         hash;
-                    robotkernel::sp_process_data_t  dev;
-                } pdin;
 
             public:
                 //! construction
