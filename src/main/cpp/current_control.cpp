@@ -192,8 +192,6 @@ void current_control::controller::start() {
     kernel& k = *kernel::get_instance();
 
     measure_inputs.pd = k.get_process_data(measure_inputs.dev_name);
-    measure_inputs.pd_hash = measure_inputs.pd->set_consumer(shared_from_this());
-
     command_outputs.pd = k.get_process_data(command_outputs.dev_name);
     command_outputs.pd_hash = command_outputs.pd->set_provider(shared_from_this());
 
@@ -234,7 +232,7 @@ inline double filter_first_order(double time, double x_n, double t_const, double
 
 //! trigger tick
 void current_control::controller::tick() {
-    auto msr_buf = measure_inputs.pd->pop(measure_inputs.pd_hash);
+    auto msr_buf = measure_inputs.pd->peek();
     auto ctrl_outputs_buf = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
 
     double q_msr = 0., dq_msr = 0., dq_msr_filt = 0.,

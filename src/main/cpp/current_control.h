@@ -75,7 +75,6 @@ class current_control :
                 struct {
                     std::string dev_name;               //!< process data device name
                     robotkernel::sp_process_data_t pd;  //!< process data device from other module
-                    size_t pd_hash;                     //!< consumer hash
                     pd_item position;                   //!< position field in process data
                     pd_item torque;                     //!< torque field in process data
                 } measure_inputs;
