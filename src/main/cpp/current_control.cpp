@@ -197,6 +197,8 @@ void current_control::controller::start() {
     command_outputs.pd = k.get_process_data(command_outputs.dev_name);
     command_outputs.pd_hash = command_outputs.pd->set_provider(shared_from_this());
 
+    local_outputs.resize(command_outputs.pd->length);
+
     find_pd_offset_and_type(measure_inputs.position, measure_inputs.pd);
     find_pd_offset_and_type(measure_inputs.torque, measure_inputs.pd);
     find_pd_offset_and_type(command_outputs.current, command_outputs.pd);
@@ -300,8 +302,8 @@ void current_control::controller::tick() {
     if (des_current < -5.0)
         des_current = -5.0;
 
-    std::vector<uint8_t> buffer(10);
-    double_to_val(&buffer[0], command_outputs.current, des_current);
+    double_to_val(&local_outputs[0], command_outputs.current, des_current);
+    command_outputs.pd->write(command_outputs.pd_hash, 0, &local_outputs[0], local_outputs.size()); 
 
     q_des_old = q_des;
     tau_des_old = tau_des;

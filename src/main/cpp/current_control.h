@@ -117,9 +117,10 @@ class current_control :
                     pd_item current;
                 } command_outputs;
 
-
                 bool with_torque;
                 bool do_reset;
+
+                std::vector<uint8_t> local_outputs;
 
                 const std::string pos_inputs_desc = 
                     "- uint32_t: mode\n"
