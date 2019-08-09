@@ -94,29 +94,29 @@ class current_control :
                         ssize_t hash;
                 };
 
-                struct pd_item {
+                typedef struct pd_item {
                     std::string name;
                     off_t offset;
                     std::string type_str;
                     pd_data_types type;
                     double scale;
-                };
+                } pd_item_t;
 
                 struct {
                     std::string dev_name;
+                    robotkernel::sp_process_data_t pd;
+                    size_t pd_hash;
                     pd_item position;
                     pd_item torque;
                 } measure_inputs;
 
                 struct {
                     std::string dev_name;
+                    robotkernel::sp_process_data_t pd;
+                    size_t pd_hash;
                     pd_item current;
                 } command_outputs;
 
-                robotkernel::sp_process_data_t pd_measure_inputs;
-                size_t pd_measure_inputs_hash;
-                robotkernel::sp_process_data_t pd_command_outputs;
-                size_t pd_command_outputs_hash;
 
                 bool with_torque;
                 bool do_reset;

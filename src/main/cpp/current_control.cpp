@@ -44,6 +44,17 @@ using namespace std;
 using namespace module_current_control;
 using namespace string_util;
 
+std::map<std::string, size_t> dt_to_len = {
+    { "float",    4 },
+    { "double",   8 },
+    { "uint8_t",  1 },
+    { "uint16_t", 2 },
+    { "uint32_t", 4 },
+    { "int8_t",   1 },
+    { "int16_t",  2 },
+    { "int32_t",  4 },
+};
+
 std::map<std::string, pd_data_types> pd_dt_map = {
     { "float",    PD_DT_FLOAT  },
     { "double",   PD_DT_DOUBLE },
@@ -119,7 +130,7 @@ current_control::controller::controller(std::shared_ptr<current_control> parent,
 #define get_pd_item(pdnode, base)                                                           \
     if (pdnode) {                                                                           \
         (base).name     = get_as<string>(pdnode, "name", "");                               \
-        (base).offset   = get_as<off_t> (pdnode, "offset", 0);                              \
+        (base).offset   = get_as<off_t> (pdnode, "offset", -1);                             \
         (base).type_str = get_as<string>(pdnode, "type", "");                               \
         (base).scale    = get_as<double>(pdnode, "scale", 0.);                              \
         if (pd_dt_map.find((base).type_str) == pd_dt_map.end())                             \
@@ -132,62 +143,60 @@ current_control::controller::controller(std::shared_ptr<current_control> parent,
     get_pd_item(node["measure_inputs"]["torque"],   measure_inputs.torque);
     get_pd_item(node["command_outputs"]["current"], command_outputs.current);
 }
-                        
+    
+void find_pd_offset_and_type(current_control::controller::pd_item_t& item, sp_process_data_t pd) {
+    if (item.offset == -1) {
+        // need to find offset and type
+        if (pd->process_data_definition == "")
+            throw str_exception("process data \"%s\" has no description, "
+                    "cannot determine pos offset!\n", pd->id().c_str());
+
+        YAML::Node pdd_node = YAML::Load(pd->process_data_definition);
+
+        bool found = false;
+        item.offset = 0;
+
+        for (const auto& kv : pdd_node) {
+            string act_dt = kv.first.as<string>();
+            string act_name = kv.second.as<string>();
+
+            if (act_name == item.name) {
+                found = true;
+                item.type_str = act_dt;
+                item.type = pd_dt_map[act_dt];
+                break;
+            }
+
+            if (dt_to_len.find(act_dt) == dt_to_len.end())
+                throw str_exception("unsupported data type in pd description: %s\n", act_dt.c_str());
+
+            item.offset += dt_to_len[act_dt];
+        }
+
+        if (!found)
+            throw str_exception("member \"%s\" not found in measurement process data description:\n%s\n",
+                    item.name.c_str(), pd->process_data_definition.c_str());
+            
+    }
+}
+
 //! creating process data input and trigger
 void current_control::controller::start() {
-    /*
     kernel& k = *kernel::get_instance();
 
-    pdout.dev  = k.get_process_data(pdout.name);
-    pdout.hash = pdout.dev->set_provider(shared_from_this());
+    measure_inputs.pd = k.get_process_data(measure_inputs.dev_name);
+    measure_inputs.pd_hash = measure_inputs.pd->set_consumer(shared_from_this());
 
-    size_t act_len = 0;
-    for (auto& input : inputs)
-        act_len += input.len;
+    command_outputs.pd = k.get_process_data(command_outputs.dev_name);
+    command_outputs.pd_hash = command_outputs.pd->set_provider(shared_from_this());
 
-    if (act_len > pdout.dev->length)
-        throw str_exception("muxer %s length mismatch: pd %s has %u bytes, "
-                "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len);
-
-    for (auto& input : inputs) {
-        string pd_desc = format_string("- uint8_t[%d]: data\n", input.len);
-        string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
-        input.pdtr  = make_shared<trigger>(tmp, "outputs");
-        input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc, input.pdtr->id());
-        input.hash  = input.pdin->set_consumer(shared_from_this());
-
-        k.add_device(input.pdtr);
-        k.add_device(input.pdin);
-    }
-    
-    auto trigger_dev = k.get_trigger(trigger_name);
-    trigger_dev->add_trigger(shared_from_this());
-    */
+    find_pd_offset_and_type(measure_inputs.position, measure_inputs.pd);
+    find_pd_offset_and_type(measure_inputs.torque, measure_inputs.pd);
+    find_pd_offset_and_type(command_outputs.current, command_outputs.pd);
 }
 
 //! destroying process data input and trigger
 void current_control::controller::stop() {
-    /*
-    kernel& k = *kernel::get_instance();
-    
-    auto trigger_dev = k.get_trigger(trigger_name);
-    trigger_dev->remove_trigger(shared_from_this());
-    
-    for (auto& input : inputs) {
-        k.remove_device(input.pdin);
-        k.remove_device(input.pdtr);
-
-        input.pdin->reset_provider(input.hash);
-
-        input.pdin  = nullptr;
-        input.pdtr  = nullptr;
-        input.hash  = 0;
-    }
-    
-    pdout.dev->reset_provider(pdout.hash);
-    pdout.hash = 0;
-    pdout.dev  = nullptr;
-    */
 }
 
 //! discrete filter first order
@@ -207,7 +216,7 @@ inline double filter_first_order(double time, double x_n, double t_const, double
 
 //! trigger tick
 void current_control::controller::tick() {
-    auto msr_buf = pd_measure_inputs->pop(pd_measure_inputs_hash);
+    auto msr_buf = measure_inputs.pd->pop(measure_inputs.pd_hash);
     auto ctrl_inputs_buf = pd_ctrl_inputs->pop(pd_ctrl_inputs_hash);
 
     double q_msr = 0., dq_msr = 0., dq_msr_filt = 0.,
@@ -389,4 +398,8 @@ int current_control::set_state(module_state_t state) {
     return (this->state = state);
 }
 
+void current_control::tick() {
+    for (auto& d : ctrl_list)
+        d->tick();
+}
 
