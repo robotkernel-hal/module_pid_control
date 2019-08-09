@@ -68,40 +68,47 @@ std::map<std::string, pd_data_types> pd_dt_map = {
 
 inline double val_to_double(uint8_t *base, const struct current_control::controller::pd_item& item) {
     switch (item.type) {
-        case PD_DT_FLOAT: {
-            float tmp = *(float *)(&base[item.offset]);
-            return (double)tmp * item.scale;
+#define CASE_PD_DT(dt_enum, dtype)                          \
+        case dt_enum: {                                     \
+            dtype tmp = *(dtype *)(&base[item.offset]);     \
+            return (double)tmp * item.scale;                \
         }
-        case PD_DT_DOUBLE: {
-            return *(double *)(&base[item.offset]) * item.scale;
-        }
-        case PD_DT_UINT8: {
-            uint8_t tmp = *(uint8_t *)(&base[item.offset]);
-            return (double)tmp * item.scale;
-        }
-        case PD_DT_UINT16: {
-            uint16_t tmp = *(uint16_t *)(&base[item.offset]);
-            return (double)tmp * item.scale;
-        }
-        case PD_DT_UINT32: {
-            uint32_t tmp = *(uint32_t *)(&base[item.offset]);
-            return (double)tmp * item.scale;
-        }
-        case PD_DT_INT8: {
-            int8_t tmp = *(int8_t *)(&base[item.offset]);
-            return (double)tmp * item.scale;
-        }
-        case PD_DT_INT16: {
-            int16_t tmp = *(int16_t *)(&base[item.offset]);
-            return (double)tmp * item.scale;
-        }
-        case PD_DT_INT32: {
-            int32_t tmp = *(int32_t *)(&base[item.offset]);
-            return (double)tmp * item.scale;
-        }
+
+        CASE_PD_DT(PD_DT_FLOAT, float)
+        CASE_PD_DT(PD_DT_DOUBLE, double)
+        CASE_PD_DT(PD_DT_UINT8, uint8_t)
+        CASE_PD_DT(PD_DT_UINT16, uint16_t)
+        CASE_PD_DT(PD_DT_UINT32, uint32_t)
+        CASE_PD_DT(PD_DT_INT8, int8_t)
+        CASE_PD_DT(PD_DT_INT16, int16_t)
+        CASE_PD_DT(PD_DT_INT32, int32_t)
+
+#undef CASE_PD_DT
+
     }
 
     return 0.;
+}
+
+inline void double_to_val(uint8_t *base, const struct current_control::controller::pd_item& item, double in) {
+    switch (item.type) {
+#define CASE_PD_DT(dt_enum, dtype)                              \
+        case dt_enum: {                                         \
+            *(dtype *)(&base[item.offset]) = (in / item.scale); \
+            break;                                              \
+        }
+
+        CASE_PD_DT(PD_DT_FLOAT, float)
+        CASE_PD_DT(PD_DT_DOUBLE, double)
+        CASE_PD_DT(PD_DT_UINT8, uint8_t)
+        CASE_PD_DT(PD_DT_UINT16, uint16_t)
+        CASE_PD_DT(PD_DT_UINT32, uint32_t)
+        CASE_PD_DT(PD_DT_INT8, int8_t)
+        CASE_PD_DT(PD_DT_INT16, int16_t)
+        CASE_PD_DT(PD_DT_INT32, int32_t)
+
+#undef CASE_PD_DT
+    }
 }
 
 current_control::controller::controller(std::shared_ptr<current_control> parent, const YAML::Node& node) :
@@ -292,7 +299,9 @@ void current_control::controller::tick() {
         des_current = 5.0;
     if (des_current < -5.0)
         des_current = -5.0;
-    int16_t des_current_mA = (int16_t)(des_current * 1000.0);
+
+    std::vector<uint8_t> buffer(10);
+    double_to_val(&buffer[0], command_outputs.current, des_current);
 
     q_des_old = q_des;
     tau_des_old = tau_des;
