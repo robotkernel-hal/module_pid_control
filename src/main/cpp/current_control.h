@@ -99,6 +99,7 @@ class current_control :
                     off_t offset;
                     std::string type_str;
                     pd_data_types type;
+                    double scale;
                 };
 
                 struct {

@@ -55,40 +55,42 @@ std::map<std::string, pd_data_types> pd_dt_map = {
     { "int32_t",  PD_DT_INT32  },
 };
 
-inline double val_to_double(uint8_t *base, off_t offset, pd_data_types type) {
-    switch (type) {
+inline double val_to_double(uint8_t *base, const struct current_control::controller::pd_item& item) {
+    switch (item.type) {
         case PD_DT_FLOAT: {
-            float tmp = *(float *)(&base[offset]);
-            return (double)tmp;
+            float tmp = *(float *)(&base[item.offset]);
+            return (double)tmp * item.scale;
         }
         case PD_DT_DOUBLE: {
-            return *(double *)(&base[offset]);
+            return *(double *)(&base[item.offset]) * item.scale;
         }
         case PD_DT_UINT8: {
-            uint8_t tmp = *(uint8_t *)(&base[offset]);
-            return (double)tmp;
+            uint8_t tmp = *(uint8_t *)(&base[item.offset]);
+            return (double)tmp * item.scale;
         }
         case PD_DT_UINT16: {
-            uint16_t tmp = *(uint16_t *)(&base[offset]);
-            return (double)tmp;
+            uint16_t tmp = *(uint16_t *)(&base[item.offset]);
+            return (double)tmp * item.scale;
         }
         case PD_DT_UINT32: {
-            uint32_t tmp = *(uint32_t *)(&base[offset]);
-            return (double)tmp;
+            uint32_t tmp = *(uint32_t *)(&base[item.offset]);
+            return (double)tmp * item.scale;
         }
         case PD_DT_INT8: {
-            int8_t tmp = *(int8_t *)(&base[offset]);
-            return (double)tmp;
+            int8_t tmp = *(int8_t *)(&base[item.offset]);
+            return (double)tmp * item.scale;
         }
         case PD_DT_INT16: {
-            int16_t tmp = *(int16_t *)(&base[offset]);
-            return (double)tmp;
+            int16_t tmp = *(int16_t *)(&base[item.offset]);
+            return (double)tmp * item.scale;
         }
         case PD_DT_INT32: {
-            int32_t tmp = *(int32_t *)(&base[offset]);
-            return (double)tmp;
+            int32_t tmp = *(int32_t *)(&base[item.offset]);
+            return (double)tmp * item.scale;
         }
     }
+
+    return 0.;
 }
 
 current_control::controller::controller(std::shared_ptr<current_control> parent, const YAML::Node& node) :
@@ -119,6 +121,7 @@ current_control::controller::controller(std::shared_ptr<current_control> parent,
         (base).name     = get_as<string>(pdnode, "name", "");                               \
         (base).offset   = get_as<off_t> (pdnode, "offset", 0);                              \
         (base).type_str = get_as<string>(pdnode, "type", "");                               \
+        (base).scale    = get_as<double>(pdnode, "scale", 0.);                              \
         if (pd_dt_map.find((base).type_str) == pd_dt_map.end())                             \
             throw str_exception("unsupported data type: %s\n", (base).type_str.c_str());    \
                                                                                             \
@@ -219,7 +222,7 @@ void current_control::controller::tick() {
     double ks = gain_tor_proportional;
     double kt = gain_tor_derivative;
 
-    q_msr = val_to_double(msr_buf, measure_inputs.position.offset, measure_inputs.position.type);
+    q_msr = val_to_double(msr_buf, measure_inputs.position);
     dq_msr = (q_msr - q_msr_old);
     dq_msr_filt = filter_first_order(ts, dq_msr, filter_t_const, &dq_msr_filt_old) / ts;
 
@@ -232,9 +235,12 @@ void current_control::controller::tick() {
     }
 
     if (with_torque) {
-        tau_msr = val_to_double(msr_buf, measure_inputs.torque.offset, measure_inputs.torque.type);
+        tau_msr = val_to_double(msr_buf, measure_inputs.torque);
         dtau_msr = (tau_msr - tau_msr_old) / ts;
         dtau_msr_filt = filter_first_order(ts, dtau_msr, filter_t_const, &dtau_msr_filt_old);
+    
+        dtau_des = (tau_des - tau_des_old) / ts;
+        dtau_des_filt = filter_first_order(ts, dtau_des, filter_t_const, &dtau_des_filt_old);
 
         auto tmp = ((pos_tor_inputs_t *)ctrl_inputs_buf);
         tau_des = tmp->target_tor;
@@ -248,8 +254,6 @@ void current_control::controller::tick() {
     // derive and filter desired position and torque
     dq_des = (q_des - q_des_old) / ts;
     dq_des_filt = filter_first_order(ts, dq_des, filter_t_const, &dq_des_filt_old);
-    dtau_des = (tau_des - tau_des_old) / ts;
-    dtau_des_filt = filter_first_order(ts, dtau_des, filter_t_const, &dtau_des_filt_old);
 
     if (do_reset) {
         dtau_des            = 0.;
@@ -280,8 +284,6 @@ void current_control::controller::tick() {
     if (des_current < -5.0)
         des_current = -5.0;
     int16_t des_current_mA = (int16_t)(des_current * 1000.0);
-
-//    pdout.dev->push(pdout.hash);
 
     q_des_old = q_des;
     tau_des_old = tau_des;
