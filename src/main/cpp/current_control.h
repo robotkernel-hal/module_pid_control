@@ -49,6 +49,16 @@ enum pd_data_types {
     PD_DT_INT32
 };
 
+const double DEFAULT_FILTER_FREQ           = 100.;
+    
+const double DEFAULT_GAIN_POS_PROPORTIONAL = 1.;
+const double DEFAULT_GAIN_POS_DERIVATIVE   = 1.;
+const double DEFAULT_GAIN_TOR_PROPORTIONAL = 1.;
+const double DEFAULT_GAIN_TOR_DERIVATIVE   = 1.;
+const double DEFAULT_GAIN_TAU_TO_I         = 0.1;
+
+const double DEFAULT_LIMIT_CURRENT         = 1.;
+
 class current_control :
     public std::enable_shared_from_this<current_control>,
     public robotkernel::module_base
@@ -70,6 +80,12 @@ class current_control :
                     std::string type_str;               //!< data type name of field
                     pd_data_types type;                 //!< data type of field
                     double scale;                       //!< field scaling
+
+                    std::string value_str;              //!< default value for overrides/states
+                    std::vector<uint8_t> value;         //!< same
+
+                    std::string mask_str;               //!< default value for state mask
+                    std::vector<uint8_t> mask;          //!< same
                 } pd_item_t;
 
                 struct {
@@ -85,6 +101,9 @@ class current_control :
                     size_t pd_hash;                     //!< provider hash
                     pd_item current;                    //!< current field in process data
                 } command_outputs;
+                
+                std::list<pd_item_t> overrides;
+                std::list<pd_item_t> power_states;
 
                 bool with_torque;
                 bool do_reset;
@@ -95,13 +114,15 @@ class current_control :
                     "- uint32_t: cc_mode\n"
                     "- double: cc_target_pos\n"
                     "- double: cc_gain_pos_proportional\n"
-                    "- double: cc_gain_pos_derivative\n";
+                    "- double: cc_gain_pos_derivative\n"
+                    "- double: cc_filter_freq\n";
 
                 typedef struct __attribute__((__packed__)) pos_outputs {
                     uint32_t mode;
                     double target_pos;
                     double gain_pos_proportional;
                     double gain_pos_derivative;
+                    double filter_freq;
                 } __attribute__((__packed__)) pos_outputs_t;
 
                 const std::string pos_tor_outputs_desc = 
@@ -111,7 +132,8 @@ class current_control :
                     "- double: cc_gain_pos_derivative\n"
                     "- double: cc_target_tor\n"
                     "- double: cc_gain_tor_proportional\n"
-                    "- double: cc_gain_tor_derivative\n";
+                    "- double: cc_gain_tor_derivative\n"
+                    "- double: cc_filter_freq\n";
 
                 typedef struct __attribute__((__packed__)) pos_tor_outputs {
                     uint32_t mode;
@@ -121,6 +143,7 @@ class current_control :
                     double target_tor;
                     double gain_tor_proportional;
                     double gain_tor_derivative;
+                    double filter_freq;
                 } __attribute__((__packed__)) pos_tor_outputs_t;
 
                 robotkernel::sp_process_data_t pd_ctrl_outputs;
@@ -135,17 +158,20 @@ class current_control :
                 double gain_pos_derivative;
                 double gain_tor_proportional;
                 double gain_tor_derivative;
+                double gain_tau_to_i;
 
                 double ts;
 
-                double q_msr_old;
-                double dq_msr_filt_old;
-                double q_des_old;
-                double dq_des_filt_old;
-                double tau_msr_old;
-                double dtau_msr_filt_old;
-                double tau_des_old;
-                double dtau_des_filt_old;
+                double q_msr_old            = 0.;
+                double dq_msr_filt_old      = 0.;
+                double q_des_old            = 0.;
+                double dq_des_filt_old      = 0.;
+                double tau_msr_old          = 0.;
+                double dtau_msr_filt_old    = 0.;
+                double tau_des_old          = 0.;
+                double dtau_des_filt_old    = 0.;
+
+                double limit_current        = 0.;
 
                 std::shared_ptr<current_control> parent;
 
@@ -167,8 +193,8 @@ class current_control :
                 void tick();                
                 
                 // process data inspection
-                void get_pdin(service_provider::process_data_inspection::pd_t& pd) {};
-                void get_pdout(service_provider::process_data_inspection::pd_t& pd) {};
+                void get_pdin(service_provider::process_data_inspection::pd_t& pd);
+                void get_pdout(service_provider::process_data_inspection::pd_t& pd);
         };
         
         typedef std::shared_ptr<controller> sp_ctrls_t;
