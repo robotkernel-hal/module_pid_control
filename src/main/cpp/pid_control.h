@@ -1,4 +1,4 @@
-//! robotkernel module current_control
+//! robotkernel module pid_control
 /*!
  * author: Robert Burger
  */
@@ -22,8 +22,8 @@
  * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef MODULE_CURRENT_CONTROL_H
-#define MODULE_CURRENT_CONTROL_H
+#ifndef MODULE_PID_CONTROL_H
+#define MODULE_PID_CONTROL_H
 
 #include "robotkernel/module.h"
 #include "robotkernel/module_base.h"
@@ -33,7 +33,7 @@
 
 #include "service_provider/process_data_inspection/base.h"
 
-namespace module_current_control {
+namespace module_pid_control {
 #ifdef EMACS
 }
 #endif
@@ -59,8 +59,8 @@ const double DEFAULT_GAIN_TAU_TO_I         = 0.1;
 
 const double DEFAULT_LIMIT_CURRENT         = 1.;
 
-class current_control :
-    public std::enable_shared_from_this<current_control>,
+class pid_control :
+    public std::enable_shared_from_this<pid_control>,
     public robotkernel::module_base
 {
     public:
@@ -73,6 +73,60 @@ class current_control :
         {
             public:
                 std::string name;
+
+                typedef struct input {
+                    input(const YAML::Node& ci_node) {
+                        kp          = get_as<double>     (ci_node, "kp",         1.);
+                        ki          = get_as<double>     (ci_node, "ki",         1.);
+                        kd          = get_as<double>     (ci_node, "kd",         1.);
+                        filter      = get_as<double>     (ci_node, "filter",   100.);
+                        target      = get_as<std::string>(ci_node, "target"        );
+                        pd          = get_as<std::string>(ci_node, "pd"            );
+                        field_name  = get_as<std::string>(ci_node, "field_name", "");
+                        offset      = get_as<uint32_t>   (ci_node, "offset",     0 );
+                        type_str    = get_as<std::string>(ci_node, "type",       "");
+                        scale       = get_as<double>     (ci_node, "scale",      1.);
+                    }
+
+                    double kp;                          //!< proportional gain
+                    double ki;                          //!< integral gain
+                    double kd;                          //!< derivative gain
+                    double filter;                      //!< filter frequency
+                    std::string target;                 //!< target value
+                    std::string pd;                     //!< process data map entry name
+                    std::string field_name;             //!< field name in process data
+                    off_t offset;                       //!< offset of process data field
+                    std::string type_str;               //!< data type name of field
+                    pd_data_types type;                 //!< data type of field
+                    double scale;                       //!< field scaling
+                
+                    double msr_old        = 0.;
+                    double d_msr_filt_old = 0.;
+                    double des_old        = 0.;
+                    double d_des_filt_old = 0.;
+                } input_t;
+
+                typedef struct output {
+                    output(const YAML::Node& ci_node) {
+                        kt          = get_as<double>     (ci_node, "kt",         1.);
+                        pd          = get_as<std::string>(ci_node, "pd"            );
+                        field_name  = get_as<std::string>(ci_node, "field_name", "");
+                        offset      = get_as<uint32_t>   (ci_node, "offset",     0 );
+                        type_str    = get_as<std::string>(ci_node, "type",       "");
+                        scale       = get_as<double>     (ci_node, "scale",      1.);
+                    }
+
+                    double kt;                          //!< gain
+                    std::string pd;                     //!< process data map entry name
+                    std::string field_name;             //!< field name in process data
+                    off_t offset;                       //!< offset of process data field
+                    std::string type_str;               //!< data type name of field
+                    pd_data_types type;                 //!< data type of field
+                    double scale;                       //!< field scaling
+                } output_t;
+
+                std::map<std::string, input_t> inputs;
+                std::map<std::string, output_t> outputs;
 
                 typedef struct pd_item {
                     std::string name;                   //!< field name of process data item
@@ -173,14 +227,14 @@ class current_control :
 
                 double limit_current        = 0.;
 
-                std::shared_ptr<current_control> parent;
+                std::shared_ptr<pid_control> parent;
 
             public:
                 //! construction
                 /*!
                  * \param node yaml intialization node
                  */
-                controller(std::shared_ptr<current_control> parent, const YAML::Node& node);
+                controller(std::shared_ptr<pid_control> parent, const YAML::Node& node);
                 ~controller() {};
 
                 //! creating process data output and trigger
@@ -207,10 +261,10 @@ class current_control :
         /*!
          * \param node yaml intialization node
          */
-        current_control(const std::string& name, const YAML::Node& node);
+        pid_control(const std::string& name, const YAML::Node& node);
 
         //! destruction 
-        ~current_control();
+        ~pid_control();
 
         //! initializaion
         void init();
@@ -229,7 +283,7 @@ class current_control :
 #ifdef EMACS
 {
 #endif
-}; // namespace module_current_control
+}; // namespace module_pid_control
 
-#endif // MODULE_CURRENT_CONTROL_H
+#endif // MODULE_PID_CONTROL_H
 

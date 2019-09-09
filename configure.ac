@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.63])
 AC_INIT(
-	[module_current_control],
+	[module_pid_control],
 	m4_esyscmd_s([cat project.properties | grep VERSION    | cut -d'=' -f2 | xargs printf "%s"]),
 	m4_esyscmd_s([cat project.properties | grep MAINTAINER | cut -d'=' -f2 | xargs printf "%s"]))
 AC_CONFIG_HEADERS([config.h])
@@ -41,7 +41,7 @@ AC_CHECK_FUNCS([strdup])
 # Checks for library functions.
 AC_CHECK_LIB(dl, dlopen)
 
-AC_CONFIG_FILES([Makefile src/main/cpp/Makefile module_current_control.pc])
+AC_CONFIG_FILES([Makefile src/main/cpp/Makefile module_pid_control.pc])
 
 AC_OUTPUT
 

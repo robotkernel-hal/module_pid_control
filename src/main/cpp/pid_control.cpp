@@ -1,4 +1,4 @@
-//! robotkernel module current_control
+//! robotkernel module pid_control
 /*!
  * author: Robert Burger
  *
@@ -28,7 +28,7 @@
 
 #include <string_util/string_util.h>
 
-#include "current_control.h"
+#include "pid_control.h"
 #include "robotkernel/exceptions.h"
 #include "robotkernel/helpers.h"
 #include <stdlib.h>
@@ -36,12 +36,12 @@
 #include <stdio.h>
 #include <iostream>
 
-MODULE_DEF(current_control, module_current_control::current_control)
+MODULE_DEF(pid_control, module_pid_control::pid_control)
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 using namespace robotkernel;
 using namespace std;
-using namespace module_current_control;
+using namespace module_pid_control;
 using namespace string_util;
 
 std::map<std::string, size_t> dt_to_len = {
@@ -66,7 +66,7 @@ std::map<std::string, pd_data_types> pd_dt_map = {
     { "int32_t",  PD_DT_INT32  },
 };
 
-inline double val_to_double(uint8_t *base, const struct current_control::controller::pd_item& item) {
+inline double val_to_double(uint8_t *base, const struct pid_control::controller::pd_item& item) {
     switch (item.type) {
 #define CASE_PD_DT(dt_enum, dtype)                          \
         case dt_enum: {                                     \
@@ -90,7 +90,7 @@ inline double val_to_double(uint8_t *base, const struct current_control::control
     return 0.;
 }
 
-inline void double_to_val(uint8_t *base, const struct current_control::controller::pd_item& item, double in) {
+inline void double_to_val(uint8_t *base, const struct pid_control::controller::pd_item& item, double in) {
     switch (item.type) {
 #define CASE_PD_DT(dt_enum, dtype)                              \
         case dt_enum: {                                         \
@@ -134,7 +134,7 @@ inline void convert_str_val(const pd_data_types& type, const std::string& value_
     }
 }
 
-inline bool check_state(uint8_t *base, const struct current_control::controller::pd_item& item) {
+inline bool check_state(uint8_t *base, const struct pid_control::controller::pd_item& item) {
     switch (item.type) {
         default: 
             return false;
@@ -158,7 +158,7 @@ inline bool check_state(uint8_t *base, const struct current_control::controller:
     return false;
 }
 
-current_control::controller::controller(std::shared_ptr<current_control> parent, const YAML::Node& node) :
+pid_control::controller::controller(std::shared_ptr<pid_control> parent, const YAML::Node& node) :
     pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
     pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
     service_provider::process_data_inspection::base(parent->name, get_as<string>(node, "name")),
@@ -179,6 +179,37 @@ current_control::controller::controller(std::shared_ptr<current_control> parent,
     gain_tau_to_i         = get_as<double>(node, "gain_tau_to_i",         DEFAULT_GAIN_TAU_TO_I);
 
     limit_current         = get_as<double>(node, "limit_current",         DEFAULT_LIMIT_CURRENT);
+
+    for (const auto& kv : node["inputs"]) {
+        string name = kv.first.as<std::string>();
+        const YAML::Node& ci_node = kv.second;
+        inputs.insert( { name, input(ci_node) } );
+    }
+    
+    for (const auto& kv : node["outputs"]) {
+        string name = kv.first.as<std::string>();
+        const YAML::Node& co_node = kv.second;
+        outputs.insert( { name, output(co_node) } );
+    }
+        
+    const auto& buf_out = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
+
+    for (auto& input : inputs) {
+        const auto& buf_in = pds[input.pd].pd->peek();
+        double msr = input.get_msr(buf_in);
+        double des = input.get_des(buf_out);
+        double d_msr = (msr - input.msr_old) / ts;
+        double d_msr_filt = filter_first_order(ts, d_msr, filter_t_const, &input.d_msr_filt_old);
+        double d_des = (des - input.des_old) / ts;
+        double d_des_filt = filter_first_order(ts, d_des, filter_t_const, &input.d_des_filt_old);
+
+        outputs[input.target].act_val += 
+            input.kp * (cmd - msr) + 
+            input.kd * (d_des_filt - d_msr_filt);
+
+        input.msr_old = msr;
+        input.des_old = des;
+    }
 
     if (!node["measure_inputs"]) 
         throw str_exception("missing \"measure_inputs\" section in module config!\n");
@@ -227,7 +258,7 @@ current_control::controller::controller(std::shared_ptr<current_control> parent,
     }
 }
 
-void find_pd_offset_and_type(current_control::controller::pd_item_t& item, sp_process_data_t pd) {
+void find_pd_offset_and_type(pid_control::controller::pd_item_t& item, sp_process_data_t pd) {
     if (item.offset == -1) {
         // need to find offset and type
         if (pd->process_data_definition == "")
@@ -271,7 +302,7 @@ void find_pd_offset_and_type(current_control::controller::pd_item_t& item, sp_pr
 }
 
 //! creating process data input and trigger
-void current_control::controller::start() {
+void pid_control::controller::start() {
     kernel& k = *kernel::get_instance();
 
     measure_inputs.pd = k.get_process_data(measure_inputs.dev_name);
@@ -320,7 +351,7 @@ void current_control::controller::start() {
 }
 
 //! destroying process data input and trigger
-void current_control::controller::stop() {
+void pid_control::controller::stop() {
     kernel& k = *kernel::get_instance();
 
     // process data inspection
@@ -343,7 +374,7 @@ inline double filter_first_order(double time, double x_n, double t_const, double
 }            
 
 //! trigger tick
-void current_control::controller::tick() {
+void pid_control::controller::tick() {
     if (parent->state != module_state_op)
         return;
 
@@ -448,10 +479,10 @@ void current_control::controller::tick() {
 }
                 
 // process data inspection
-void current_control::controller::get_pdin(service_provider::process_data_inspection::pd_t& pd) {
+void pid_control::controller::get_pdin(service_provider::process_data_inspection::pd_t& pd) {
 }
 
-void current_control::controller::get_pdout(service_provider::process_data_inspection::pd_t& pd) {
+void pid_control::controller::get_pdout(service_provider::process_data_inspection::pd_t& pd) {
     const auto& buf = command_outputs.pd->peek();
     pd.resize(command_outputs.pd->length);
     memcpy(&pd[0], buf, pd.size());
@@ -462,18 +493,18 @@ void current_control::controller::get_pdout(service_provider::process_data_inspe
 /*!
  * \param node yaml intialization node
  */
-current_control::current_control(const std::string& name, const YAML::Node& node) : 
-    module_base("module_current_control", name, node)
+pid_control::pid_control(const std::string& name, const YAML::Node& node) : 
+    module_base("module_pid_control", name, node)
 {
     config = YAML::Clone(node);
 }
 
 //! destruction 
-current_control::~current_control() {
+pid_control::~pid_control() {
     set_state(module_state_init);
 }
 
-void current_control::init() {
+void pid_control::init() {
     if (config["controllers"]) {
         for (const auto& ctrl_node : config["controllers"]) {
             auto d = std::make_shared<controller>(shared_from_this(), ctrl_node);
@@ -487,7 +518,7 @@ void current_control::init() {
  * \param state requested state
  * \return success or failure
  */
-int current_control::set_state(module_state_t state) {
+int pid_control::set_state(module_state_t state) {
     // get transition
     uint32_t transition = GEN_STATE(this->state, state);
 
@@ -558,7 +589,7 @@ int current_control::set_state(module_state_t state) {
     return (this->state = state);
 }
 
-void current_control::tick() {
+void pid_control::tick() {
     if (state != module_state_op)
         return;
 
