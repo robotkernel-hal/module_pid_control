@@ -74,18 +74,32 @@ class pid_control :
             public:
                 std::string name;
 
-                typedef struct input {
-                    input(const YAML::Node& ci_node) {
-                        kp          = get_as<double>     (ci_node, "kp",         1.);
-                        ki          = get_as<double>     (ci_node, "ki",         1.);
-                        kd          = get_as<double>     (ci_node, "kd",         1.);
-                        filter      = get_as<double>     (ci_node, "filter",   100.);
-                        target      = get_as<std::string>(ci_node, "target"        );
+                typedef struct io_base {
+                    io_base(const YAML::Node& ci_node) {
                         pd          = get_as<std::string>(ci_node, "pd"            );
                         field_name  = get_as<std::string>(ci_node, "field_name", "");
                         offset      = get_as<uint32_t>   (ci_node, "offset",     0 );
                         type_str    = get_as<std::string>(ci_node, "type",       "");
                         scale       = get_as<double>     (ci_node, "scale",      1.);
+                    }
+
+                    virtual ~io_base() {};
+
+                    std::string pd;                     //!< process data map entry name
+                    std::string field_name;             //!< field name in process data
+                    off_t offset;                       //!< offset of process data field
+                    std::string type_str;               //!< data type name of field
+                    pd_data_types type;                 //!< data type of field
+                    double scale;                       //!< field scaling
+                } io_base_t;
+
+                typedef struct input : io_base_t {
+                    input(const YAML::Node& ci_node) : io_base(ci_node) {
+                        kp          = get_as<double>     (ci_node, "kp",         1.);
+                        ki          = get_as<double>     (ci_node, "ki",         1.);
+                        kd          = get_as<double>     (ci_node, "kd",         1.);
+                        filter      = get_as<double>     (ci_node, "filter",   100.);
+                        target      = get_as<std::string>(ci_node, "target"        );
                     }
 
                     double kp;                          //!< proportional gain
@@ -93,12 +107,8 @@ class pid_control :
                     double kd;                          //!< derivative gain
                     double filter;                      //!< filter frequency
                     std::string target;                 //!< target value
-                    std::string pd;                     //!< process data map entry name
-                    std::string field_name;             //!< field name in process data
-                    off_t offset;                       //!< offset of process data field
-                    std::string type_str;               //!< data type name of field
-                    pd_data_types type;                 //!< data type of field
-                    double scale;                       //!< field scaling
+
+                    off_t pd_ctrl_outputs_offset;
                 
                     double msr_old        = 0.;
                     double d_msr_filt_old = 0.;
@@ -106,63 +116,85 @@ class pid_control :
                     double d_des_filt_old = 0.;
                 } input_t;
 
-                typedef struct output {
-                    output(const YAML::Node& ci_node) {
+                typedef struct output : io_base_t {
+                    output(const YAML::Node& ci_node) : io_base(ci_node) {
                         kt          = get_as<double>     (ci_node, "kt",         1.);
-                        pd          = get_as<std::string>(ci_node, "pd"            );
-                        field_name  = get_as<std::string>(ci_node, "field_name", "");
-                        offset      = get_as<uint32_t>   (ci_node, "offset",     0 );
-                        type_str    = get_as<std::string>(ci_node, "type",       "");
-                        scale       = get_as<double>     (ci_node, "scale",      1.);
                     }
 
                     double kt;                          //!< gain
-                    std::string pd;                     //!< process data map entry name
-                    std::string field_name;             //!< field name in process data
-                    off_t offset;                       //!< offset of process data field
-                    std::string type_str;               //!< data type name of field
-                    pd_data_types type;                 //!< data type of field
-                    double scale;                       //!< field scaling
+
+                    double act_val;
                 } output_t;
 
-                std::map<std::string, input_t> inputs;
-                std::map<std::string, output_t> outputs;
-
-                typedef struct pd_item {
-                    std::string name;                   //!< field name of process data item
-                    off_t offset;                       //!< offset of process data field
-                    std::string type_str;               //!< data type name of field
-                    pd_data_types type;                 //!< data type of field
-                    double scale;                       //!< field scaling
+                typedef struct override_state : io_base_t {
+                    override_state(const YAML::Node& ci_node) : io_base(ci_node) {
+                    }
 
                     std::string value_str;              //!< default value for overrides/states
                     std::vector<uint8_t> value;         //!< same
 
                     std::string mask_str;               //!< default value for state mask
                     std::vector<uint8_t> mask;          //!< same
-                } pd_item_t;
+                } override_state_t;
 
-                struct {
-                    std::string dev_name;               //!< process data device name
-                    robotkernel::sp_process_data_t pd;  //!< process data device from other module
-                    pd_item position;                   //!< position field in process data
-                    pd_item torque;                     //!< torque field in process data
-                } measure_inputs;
+                std::map<std::string, input_t> inputs;
+                std::map<std::string, output_t> outputs;
+                std::map<std::string, override_state_t> overrides;
+                std::map<std::string, override_state_t> states;
 
-                struct {
+                typedef struct pd {
                     std::string dev_name;               //!< process data device name
                     robotkernel::sp_process_data_t pd;  //!< process data device from other module
                     size_t pd_hash;                     //!< provider hash
-                    pd_item current;                    //!< current field in process data
-                } command_outputs;
-                
-                std::list<pd_item_t> overrides;
-                std::list<pd_item_t> power_states;
 
-                bool with_torque;
-                bool do_reset;
+                    off_t pd_ctrl_outputs_offset;              
+                } pd_t;
+
+                std::map<std::string, pd_t> pds;
+
+//                typedef struct pd_item {
+//                    std::string name;                   //!< field name of process data item
+//                    off_t offset;                       //!< offset of process data field
+//                    std::string type_str;               //!< data type name of field
+//                    pd_data_types type;                 //!< data type of field
+//                    double scale;                       //!< field scaling
+//
+//                    std::string value_str;              //!< default value for overrides/states
+//                    std::vector<uint8_t> value;         //!< same
+//
+//                    std::string mask_str;               //!< default value for state mask
+//                    std::vector<uint8_t> mask;          //!< same
+//                } pd_item_t;
+//
+//                struct {
+//                    std::string dev_name;               //!< process data device name
+//                    robotkernel::sp_process_data_t pd;  //!< process data device from other module
+//                    pd_item position;                   //!< position field in process data
+//                    pd_item torque;                     //!< torque field in process data
+//                } measure_inputs;
+//
+//                struct {
+//                    std::string dev_name;               //!< process data device name
+//                    robotkernel::sp_process_data_t pd;  //!< process data device from other module
+//                    size_t pd_hash;                     //!< provider hash
+//                    pd_item current;                    //!< current field in process data
+//                } command_outputs;
+//                
+//                std::list<pd_item_t> overrides;
+//                std::list<pd_item_t> power_states;
+//
+//                bool with_torque;
+//                bool do_reset;
 
                 std::vector<uint8_t> local_outputs;
+
+                typedef struct __attribute__((__packed__)) cc_outputs_item {
+                    double value;
+                    double p;
+                    double i;
+                    double d;
+                    double filter;
+                } cc_outputs_item_t;
 
                 const std::string pos_outputs_desc = 
                     "- uint32_t: cc_mode\n"
@@ -204,28 +236,28 @@ class pid_control :
                 size_t pd_ctrl_outputs_hash;
 
             private:
-                double filter_freq;
-                double filter_t_const;
-
-                // controller gains
-                double gain_pos_proportional;
-                double gain_pos_derivative;
-                double gain_tor_proportional;
-                double gain_tor_derivative;
-                double gain_tau_to_i;
+//                double filter_freq;
+//                double filter_t_const;
+//
+//                // controller gains
+//                double gain_pos_proportional;
+//                double gain_pos_derivative;
+//                double gain_tor_proportional;
+//                double gain_tor_derivative;
+//                double gain_tau_to_i;
 
                 double ts;
 
-                double q_msr_old            = 0.;
-                double dq_msr_filt_old      = 0.;
-                double q_des_old            = 0.;
-                double dq_des_filt_old      = 0.;
-                double tau_msr_old          = 0.;
-                double dtau_msr_filt_old    = 0.;
-                double tau_des_old          = 0.;
-                double dtau_des_filt_old    = 0.;
+//                double q_msr_old            = 0.;
+//                double dq_msr_filt_old      = 0.;
+//                double q_des_old            = 0.;
+//                double dq_des_filt_old      = 0.;
+//                double tau_msr_old          = 0.;
+//                double dtau_msr_filt_old    = 0.;
+//                double tau_des_old          = 0.;
+//                double dtau_des_filt_old    = 0.;
 
-                double limit_current        = 0.;
+//                double limit_current        = 0.;
 
                 std::shared_ptr<pid_control> parent;
 

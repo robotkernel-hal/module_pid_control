@@ -35,6 +35,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <iostream>
+#include <algorithm>
 
 MODULE_DEF(pid_control, module_pid_control::pid_control)
 
@@ -66,7 +67,7 @@ std::map<std::string, pd_data_types> pd_dt_map = {
     { "int32_t",  PD_DT_INT32  },
 };
 
-inline double val_to_double(uint8_t *base, const struct pid_control::controller::pd_item& item) {
+inline double val_to_double(uint8_t *base, const struct pid_control::controller::io_base& item) {
     switch (item.type) {
 #define CASE_PD_DT(dt_enum, dtype)                          \
         case dt_enum: {                                     \
@@ -90,7 +91,7 @@ inline double val_to_double(uint8_t *base, const struct pid_control::controller:
     return 0.;
 }
 
-inline void double_to_val(uint8_t *base, const struct pid_control::controller::pd_item& item, double in) {
+inline void double_to_val(uint8_t *base, const struct pid_control::controller::io_base& item, double in) {
     switch (item.type) {
 #define CASE_PD_DT(dt_enum, dtype)                              \
         case dt_enum: {                                         \
@@ -134,7 +135,7 @@ inline void convert_str_val(const pd_data_types& type, const std::string& value_
     }
 }
 
-inline bool check_state(uint8_t *base, const struct pid_control::controller::pd_item& item) {
+inline bool check_state(uint8_t *base, const struct pid_control::controller::override_state& item) {
     switch (item.type) {
         default: 
             return false;
@@ -166,19 +167,19 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
 {
     name = get_as<string>(node, "name");
     ts = 0.001;
-    with_torque = false;
-
-    filter_freq           = get_as<double>(node, "filter_freq",           DEFAULT_FILTER_FREQ);
-    filter_t_const        = (1.0 / (2.0 * M_PI * filter_freq));
-                
-    // controller gains
-    gain_pos_proportional = get_as<double>(node, "gain_pos_proportional", DEFAULT_GAIN_POS_PROPORTIONAL);
-    gain_pos_derivative   = get_as<double>(node, "gain_pos_derivative",   DEFAULT_GAIN_POS_DERIVATIVE);
-    gain_tor_proportional = get_as<double>(node, "gain_tor_proportional", DEFAULT_GAIN_TOR_PROPORTIONAL);
-    gain_tor_derivative   = get_as<double>(node, "gain_tor_derivative",   DEFAULT_GAIN_TOR_DERIVATIVE);
-    gain_tau_to_i         = get_as<double>(node, "gain_tau_to_i",         DEFAULT_GAIN_TAU_TO_I);
-
-    limit_current         = get_as<double>(node, "limit_current",         DEFAULT_LIMIT_CURRENT);
+//    with_torque = false;
+//
+//    filter_freq           = get_as<double>(node, "filter_freq",           DEFAULT_FILTER_FREQ);
+//    filter_t_const        = (1.0 / (2.0 * M_PI * filter_freq));
+//                
+//    // controller gains
+//    gain_pos_proportional = get_as<double>(node, "gain_pos_proportional", DEFAULT_GAIN_POS_PROPORTIONAL);
+//    gain_pos_derivative   = get_as<double>(node, "gain_pos_derivative",   DEFAULT_GAIN_POS_DERIVATIVE);
+//    gain_tor_proportional = get_as<double>(node, "gain_tor_proportional", DEFAULT_GAIN_TOR_PROPORTIONAL);
+//    gain_tor_derivative   = get_as<double>(node, "gain_tor_derivative",   DEFAULT_GAIN_TOR_DERIVATIVE);
+//    gain_tau_to_i         = get_as<double>(node, "gain_tau_to_i",         DEFAULT_GAIN_TAU_TO_I);
+//
+//    limit_current         = get_as<double>(node, "limit_current",         DEFAULT_LIMIT_CURRENT);
 
     for (const auto& kv : node["inputs"]) {
         string name = kv.first.as<std::string>();
@@ -191,12 +192,39 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
         const YAML::Node& co_node = kv.second;
         outputs.insert( { name, output(co_node) } );
     }
+
+    if (node["overrides"]) {
+        for (const auto& kv : node["overrides"]) {
+            string name = kv.first.as<std::string>();
+            const YAML::Node& ovr_node = kv.second;
+            override_state_t ovr(ovr_node);
+            overrides.insert( { name, ovr } );
+
+            parent->log(info, "adding override for field \"%s\" to %s\n", 
+                    name.c_str(), ovr.value_str.c_str());
+        }
+    }
+    
+    if (node["power_states"]) {
+        for (const auto& kv : node["power_states"]) {
+            string name = kv.first.as<std::string>();
+            const YAML::Node& ps_node = kv.second;
+            override_state_t ps(ps_node);
+            overrides.insert( { name, ps } );
+
+            parent->log(info, "adding power_state for field \"%s\" with mask %s and value %s\n", 
+                    name.c_str(), ps.mask_str.c_str(), ps.value_str.c_str());
+        }
+    }
         
+#ifdef cyclic_part
     const auto& buf_out = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
 
-    for (auto& input : inputs) {
+    for (auto& kv : inputs) {
+        auto& input = kv.second;
+
         const auto& buf_in = pds[input.pd].pd->peek();
-        double msr = input.get_msr(buf_in);
+        double msr = val_to_double(buf_in, input);
         double des = input.get_des(buf_out);
         double d_msr = (msr - input.msr_old) / ts;
         double d_msr_filt = filter_first_order(ts, d_msr, filter_t_const, &input.d_msr_filt_old);
@@ -210,15 +238,16 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
         input.msr_old = msr;
         input.des_old = des;
     }
+#endif
 
-    if (!node["measure_inputs"]) 
-        throw str_exception("missing \"measure_inputs\" section in module config!\n");
-    if (!node["command_outputs"]) 
-        throw str_exception("missing \"command_outputs\" section in module config!\n");
-
-    measure_inputs.dev_name              = get_as<string>(node["measure_inputs"], "dev_name");
-    command_outputs.dev_name             = get_as<string>(node["command_outputs"], "dev_name");
-
+//    if (!node["measure_inputs"]) 
+//        throw str_exception("missing \"measure_inputs\" section in module config!\n");
+//    if (!node["command_outputs"]) 
+//        throw str_exception("missing \"command_outputs\" section in module config!\n");
+//
+//    measure_inputs.dev_name              = get_as<string>(node["measure_inputs"], "dev_name");
+//    command_outputs.dev_name             = get_as<string>(node["command_outputs"], "dev_name");
+//
 #define get_pd_item(pdnode, base)                                                           \
     if (pdnode) {                                                                           \
         (base).name     = get_as<string>(pdnode, "name", "");                               \
@@ -228,37 +257,37 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
         (base).value_str= get_as<string>(pdnode, "value", "");                              \
         (base).mask_str = get_as<string>(pdnode, "mask", "");                               \
     }
-    
-    get_pd_item(node["measure_inputs"]["position"], measure_inputs.position);
-    get_pd_item(node["measure_inputs"]["torque"],   measure_inputs.torque);
-    get_pd_item(node["command_outputs"]["current"], command_outputs.current);
+//    
+//    get_pd_item(node["measure_inputs"]["position"], measure_inputs.position);
+//    get_pd_item(node["measure_inputs"]["torque"],   measure_inputs.torque);
+//    get_pd_item(node["command_outputs"]["current"], command_outputs.current);
 
-    if (node["overrides"]) {
-        for (const auto& ovr : node["overrides"]) {
-            pd_item_t tmp;
-            get_pd_item(ovr, tmp);
-
-            parent->log(info, "adding override for field \"%s\" to %s\n", 
-                    tmp.name.c_str(), tmp.value_str.c_str());
-
-            overrides.push_back(tmp);
-        }
-    }
-    
-    if (node["power_states"]) {
-        for (const auto& ovr : node["power_states"]) {
-            pd_item_t tmp;
-            get_pd_item(ovr, tmp);
-
-            parent->log(info, "adding power_state for field \"%s\" with mask %s and value %s\n", 
-                    tmp.name.c_str(), tmp.mask_str.c_str(), tmp.value_str.c_str());
-
-            power_states.push_back(tmp);
-        }
-    }
+//    if (node["overrides"]) {
+//        for (const auto& ovr : node["overrides"]) {
+//            pd_item_t tmp;
+//            get_pd_item(ovr, tmp);
+//
+//            parent->log(info, "adding override for field \"%s\" to %s\n", 
+//                    tmp.name.c_str(), tmp.value_str.c_str());
+//
+//            overrides.push_back(tmp);
+//        }
+//    }
+//    
+//    if (node["power_states"]) {
+//        for (const auto& ovr : node["power_states"]) {
+//            pd_item_t tmp;
+//            get_pd_item(ovr, tmp);
+//
+//            parent->log(info, "adding power_state for field \"%s\" with mask %s and value %s\n", 
+//                    tmp.name.c_str(), tmp.mask_str.c_str(), tmp.value_str.c_str());
+//
+//            power_states.push_back(tmp);
+//        }
+//    }
 }
 
-void find_pd_offset_and_type(pid_control::controller::pd_item_t& item, sp_process_data_t pd) {
+void find_pd_offset_and_type(pid_control::controller::io_base_t& item, sp_process_data_t pd) {
     if (item.offset == -1) {
         // need to find offset and type
         if (pd->process_data_definition == "")
@@ -274,18 +303,21 @@ void find_pd_offset_and_type(pid_control::controller::pd_item_t& item, sp_proces
                 string act_dt = kv.first.as<string>();
                 string act_name = kv.second.as<string>();
 
-                if (act_name == item.name) {
+                if (act_name == item.field_name) {
                     item.type_str = act_dt;
                     item.type = pd_dt_map[act_dt];
+    
+                    try {
+                        auto& os = dynamic_cast<pid_control::controller::override_state&>(item);
+                        if (os.value_str != "") {
+                            convert_str_val(os.type, os.value_str, os.value);
+                        }
 
-                    if (item.value_str != "") {
-                        convert_str_val(item.type, item.value_str, item.value);
-                    }
+                        if (os.mask_str != "") {
+                            convert_str_val(os.type, os.mask_str, os.mask);
+                        }
+                    } catch (std::bad_cast exp) {}
                     
-                    if (item.mask_str != "") {
-                        convert_str_val(item.type, item.mask_str, item.mask);
-                    }
-
                     return;
                 }
 
@@ -297,44 +329,92 @@ void find_pd_offset_and_type(pid_control::controller::pd_item_t& item, sp_proces
         }
 
         throw str_exception("member \"%s\" not found in measurement process data description:\n%s\n",
-                item.name.c_str(), pd->process_data_definition.c_str());
+                item.field_name.c_str(), pd->process_data_definition.c_str());
     }
+}
+
+template <typename T>
+inline void add_pds(std::map<std::string, T>& tmp_map, std::map<std::string, pid_control::controller::pd_t>& pds) {
+    for (auto& kv : tmp_map) {
+        auto &item = kv.second;
+        if (pds.find(item.pd) == pds.end()) {
+            pds[item.pd].dev_name = item.pd;
+            pds[item.pd].pd = kernel::get_instance()->get_process_data(item.pd);
+            pds[item.pd].pd_hash = 0;
+        }
+    
+        find_pd_offset_and_type(item, pds[item.pd].pd);
+    }
+}
+
+template<typename T>
+inline bool contains(std::list<T> &tmp_list, const T& element) {
+    auto it = std::find(tmp_list.begin(), tmp_list.end(), element);
+    return it != tmp_list.end();
 }
 
 //! creating process data input and trigger
 void pid_control::controller::start() {
     kernel& k = *kernel::get_instance();
 
-    measure_inputs.pd = k.get_process_data(measure_inputs.dev_name);
-    command_outputs.pd = k.get_process_data(command_outputs.dev_name);
-    command_outputs.pd_hash = command_outputs.pd->set_provider(shared_from_this());
+    add_pds(inputs, pds);
+    add_pds(outputs, pds);
+    add_pds(overrides, pds);
+    add_pds(states, pds);
 
-    local_outputs.resize(command_outputs.pd->length);
+    size_t local_outputs_length = 0;
 
-    find_pd_offset_and_type(measure_inputs.position, measure_inputs.pd);
-    find_pd_offset_and_type(measure_inputs.torque, measure_inputs.pd);
-    find_pd_offset_and_type(command_outputs.current, command_outputs.pd);
+    for (const auto& kv : outputs) {
+        auto& item = kv.second;
+        pds[item.pd].pd_hash = pds[item.pd].pd->set_provider(shared_from_this());
 
-    for (auto& pdi : overrides) {
-        find_pd_offset_and_type(pdi, command_outputs.pd);
+        local_outputs_length += pds[item.pd].pd->length;
     }
 
-    for (auto& ps : power_states) {
-        find_pd_offset_and_type(ps, command_outputs.pd);
-    }
+    local_outputs.resize(local_outputs_length);
 
     // create process data 
-    size_t cc_outputs_struct_length = with_torque ? sizeof(pos_tor_outputs_t) : sizeof(pos_outputs_t);
-    string cc_ctrl_outputs_desc = with_torque ? pos_tor_outputs_desc : pos_outputs_desc;
-    string pd_ctrl_outputs_desc = command_outputs.pd->process_data_definition + cc_ctrl_outputs_desc;
-    pd_ctrl_outputs = make_shared<triple_buffer>(command_outputs.pd->length + cc_outputs_struct_length, 
-            parent->name, format_string("%s.outputs", name.c_str()), pd_ctrl_outputs_desc);
+    std::list<std::string> processed_pd;
+    size_t cc_outputs_struct_length = 0;
+    YAML::Emitter emitter;
+    emitter << YAML::BeginSeq;
+
+    for (auto& kv : inputs) {
+        auto& name = kv.first;
+        auto& item = kv.second;
+
+        if (!contains(processed_pd, item.pd)) {
+            pds[item.pd].pd_ctrl_outputs_offset = cc_outputs_struct_length;
+            cc_outputs_struct_length += pds[item.pd].pd->length;
+
+            YAML::Node pd_node = YAML::Load(pds[item.pd].pd->process_data_definition);
+            for (const auto& list_node : pd_node) 
+                emitter << list_node;
+
+            processed_pd.push_back(item.pd);
+        }
+
+        item.pd_ctrl_outputs_offset = cc_outputs_struct_length;
+        cc_outputs_struct_length += 8 + 8 + 8 + 8 + 8; // val + p + i + d + filter
+        
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_value", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_p", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_i", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_d", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_filter", name.c_str()) << YAML::EndMap;
+    }
+
+    emitter << YAML::EndSeq;
+
+    pd_ctrl_outputs = make_shared<triple_buffer>(cc_outputs_struct_length, 
+            parent->name, format_string("%s.outputs", name.c_str()), emitter.c_str());
     pd_ctrl_outputs_hash = pd_ctrl_outputs->set_consumer(shared_from_this());
     k.add_device(pd_ctrl_outputs);
 
     // process data inspection
     k.add_device(shared_from_this());
 
+    /*
     if (measure_inputs.pd->clk_device != "") {
         auto clk_dev = k.get_trigger(measure_inputs.pd->clk_device);
         clk_dev->add_trigger(shared_from_this());
@@ -348,6 +428,7 @@ void pid_control::controller::start() {
                     clk_dev->id().c_str(), ts);
         }
     }
+    */
 }
 
 //! destroying process data input and trigger
@@ -378,6 +459,40 @@ void pid_control::controller::tick() {
     if (parent->state != module_state_op)
         return;
 
+    const auto& buf_out = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
+
+    for (auto& kv : outputs) 
+        kv.second.act_val = 0.;
+
+    for (auto& kv : inputs) {
+        auto& input = kv.second;
+
+        const auto& buf_in = pds[input.pd].pd->peek();
+        cc_outputs_item_t *cc_outputs = (cc_outputs_item_t *)&buf_out[input.pd_ctrl_outputs_offset];
+        
+        double filter_t_const = (1.0 / (2.0 * M_PI * input.filter));
+
+        double msr = val_to_double(buf_in, input);
+        double des = cc_outputs->value;
+        double d_msr = (msr - input.msr_old) / ts;
+        double d_msr_filt = filter_first_order(ts, d_msr, filter_t_const, &input.d_msr_filt_old);
+        double d_des = (des - input.des_old) / ts;
+        double d_des_filt = filter_first_order(ts, d_des, filter_t_const, &input.d_des_filt_old);
+
+        auto output_it = outputs.find(input.target);
+        if (output_it == outputs.end())
+            throw str_exception("no output with name %s\n", input.target.c_str());
+
+        auto& output = (*output_it).second;
+        output.act_val += 
+            input.kp * (des - msr) + 
+            input.kd * (d_des_filt - d_msr_filt);
+
+        input.msr_old = msr;
+        input.des_old = des;
+    }
+
+#ifdef oldcode
     auto msr_buf = measure_inputs.pd->peek();
     auto ctrl_outputs_buf = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);    
 
@@ -476,6 +591,7 @@ void pid_control::controller::tick() {
 
     q_des_old = q_des;
     tau_des_old = tau_des;
+#endif
 }
                 
 // process data inspection
@@ -483,9 +599,11 @@ void pid_control::controller::get_pdin(service_provider::process_data_inspection
 }
 
 void pid_control::controller::get_pdout(service_provider::process_data_inspection::pd_t& pd) {
+#ifdef oldcode
     const auto& buf = command_outputs.pd->peek();
     pd.resize(command_outputs.pd->length);
     memcpy(&pd[0], buf, pd.size());
+#endif
 //    std::copy(buf.begin(), buf.end(), std::back_inserter(pd));
 }
 
