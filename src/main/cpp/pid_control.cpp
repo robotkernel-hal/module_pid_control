@@ -167,29 +167,15 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
 {
     name = get_as<string>(node, "name");
     ts = 0.001;
-//    with_torque = false;
-//
-//    filter_freq           = get_as<double>(node, "filter_freq",           DEFAULT_FILTER_FREQ);
-//    filter_t_const        = (1.0 / (2.0 * M_PI * filter_freq));
-//                
-//    // controller gains
-//    gain_pos_proportional = get_as<double>(node, "gain_pos_proportional", DEFAULT_GAIN_POS_PROPORTIONAL);
-//    gain_pos_derivative   = get_as<double>(node, "gain_pos_derivative",   DEFAULT_GAIN_POS_DERIVATIVE);
-//    gain_tor_proportional = get_as<double>(node, "gain_tor_proportional", DEFAULT_GAIN_TOR_PROPORTIONAL);
-//    gain_tor_derivative   = get_as<double>(node, "gain_tor_derivative",   DEFAULT_GAIN_TOR_DERIVATIVE);
-//    gain_tau_to_i         = get_as<double>(node, "gain_tau_to_i",         DEFAULT_GAIN_TAU_TO_I);
-//
-//    limit_current         = get_as<double>(node, "limit_current",         DEFAULT_LIMIT_CURRENT);
 
-    for (const auto& kv : node["inputs"]) {
-        string name = kv.first.as<std::string>();
-        const YAML::Node& ci_node = kv.second;
+    for (const auto& ci_node : node["inputs"]) {
+        string name = get_as<string>(ci_node, "name");
+        input_order.push_back(name);
         inputs.insert( { name, input(ci_node) } );
     }
     
-    for (const auto& kv : node["outputs"]) {
-        string name = kv.first.as<std::string>();
-        const YAML::Node& co_node = kv.second;
+    for (const auto& co_node : node["outputs"]) {
+        string name = get_as<string>(co_node, "name");
         outputs.insert( { name, output(co_node) } );
     }
 
@@ -216,75 +202,6 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
                     name.c_str(), ps.mask_str.c_str(), ps.value_str.c_str());
         }
     }
-        
-#ifdef cyclic_part
-    const auto& buf_out = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
-
-    for (auto& kv : inputs) {
-        auto& input = kv.second;
-
-        const auto& buf_in = pds[input.pd].pd->peek();
-        double msr = val_to_double(buf_in, input);
-        double des = input.get_des(buf_out);
-        double d_msr = (msr - input.msr_old) / ts;
-        double d_msr_filt = filter_first_order(ts, d_msr, filter_t_const, &input.d_msr_filt_old);
-        double d_des = (des - input.des_old) / ts;
-        double d_des_filt = filter_first_order(ts, d_des, filter_t_const, &input.d_des_filt_old);
-
-        outputs[input.target].act_val += 
-            input.kp * (cmd - msr) + 
-            input.kd * (d_des_filt - d_msr_filt);
-
-        input.msr_old = msr;
-        input.des_old = des;
-    }
-#endif
-
-//    if (!node["measure_inputs"]) 
-//        throw str_exception("missing \"measure_inputs\" section in module config!\n");
-//    if (!node["command_outputs"]) 
-//        throw str_exception("missing \"command_outputs\" section in module config!\n");
-//
-//    measure_inputs.dev_name              = get_as<string>(node["measure_inputs"], "dev_name");
-//    command_outputs.dev_name             = get_as<string>(node["command_outputs"], "dev_name");
-//
-#define get_pd_item(pdnode, base)                                                           \
-    if (pdnode) {                                                                           \
-        (base).name     = get_as<string>(pdnode, "name", "");                               \
-        (base).offset   = get_as<off_t> (pdnode, "offset", -1);                             \
-        (base).type_str = get_as<string>(pdnode, "type", "");                               \
-        (base).scale    = get_as<double>(pdnode, "scale", 0.);                              \
-        (base).value_str= get_as<string>(pdnode, "value", "");                              \
-        (base).mask_str = get_as<string>(pdnode, "mask", "");                               \
-    }
-//    
-//    get_pd_item(node["measure_inputs"]["position"], measure_inputs.position);
-//    get_pd_item(node["measure_inputs"]["torque"],   measure_inputs.torque);
-//    get_pd_item(node["command_outputs"]["current"], command_outputs.current);
-
-//    if (node["overrides"]) {
-//        for (const auto& ovr : node["overrides"]) {
-//            pd_item_t tmp;
-//            get_pd_item(ovr, tmp);
-//
-//            parent->log(info, "adding override for field \"%s\" to %s\n", 
-//                    tmp.name.c_str(), tmp.value_str.c_str());
-//
-//            overrides.push_back(tmp);
-//        }
-//    }
-//    
-//    if (node["power_states"]) {
-//        for (const auto& ovr : node["power_states"]) {
-//            pd_item_t tmp;
-//            get_pd_item(ovr, tmp);
-//
-//            parent->log(info, "adding power_state for field \"%s\" with mask %s and value %s\n", 
-//                    tmp.name.c_str(), tmp.mask_str.c_str(), tmp.value_str.c_str());
-//
-//            power_states.push_back(tmp);
-//        }
-//    }
 }
 
 void find_pd_offset_and_type(pid_control::controller::io_base_t& item, sp_process_data_t pd) {
@@ -379,9 +296,8 @@ void pid_control::controller::start() {
     YAML::Emitter emitter;
     emitter << YAML::BeginSeq;
 
-    for (auto& kv : inputs) {
-        auto& name = kv.first;
-        auto& item = kv.second;
+    for (auto& name : input_order) {
+        auto& item = (*(inputs.find(name))).second;
 
         if (!contains(processed_pd, item.pd)) {
             pds[item.pd].pd_ctrl_outputs_offset = cc_outputs_struct_length;

@@ -138,6 +138,7 @@ class pid_control :
                 } override_state_t;
 
                 std::map<std::string, input_t> inputs;
+                std::list<std::string> input_order;
                 std::map<std::string, output_t> outputs;
                 std::map<std::string, override_state_t> overrides;
                 std::map<std::string, override_state_t> states;
