@@ -176,13 +176,13 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
     
     for (const auto& co_node : node["outputs"]) {
         string name = get_as<string>(co_node, "name");
+        output_order.push_back(name);
         outputs.insert( { name, output(co_node) } );
     }
 
     if (node["overrides"]) {
-        for (const auto& kv : node["overrides"]) {
-            string name = kv.first.as<std::string>();
-            const YAML::Node& ovr_node = kv.second;
+        for (const auto& ovr_node : node["overrides"]) {
+            string name = get_as<string>(ovr_node, "name");
             override_state_t ovr(ovr_node);
             overrides.insert( { name, ovr } );
 
@@ -192,11 +192,10 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
     }
     
     if (node["power_states"]) {
-        for (const auto& kv : node["power_states"]) {
-            string name = kv.first.as<std::string>();
-            const YAML::Node& ps_node = kv.second;
+        for (const auto& ps_node : node["power_states"]) {
+            string name = get_as<string>(ps_node, "name");
             override_state_t ps(ps_node);
-            overrides.insert( { name, ps } );
+            states.insert( { name, ps } );
 
             parent->log(info, "adding power_state for field \"%s\" with mask %s and value %s\n", 
                     name.c_str(), ps.mask_str.c_str(), ps.value_str.c_str());
@@ -205,7 +204,7 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
 }
 
 void find_pd_offset_and_type(pid_control::controller::io_base_t& item, sp_process_data_t pd) {
-    if (item.offset == -1) {
+    if (item.field_name != "") {
         // need to find offset and type
         if (pd->process_data_definition == "")
             throw str_exception("process data \"%s\" has no description, "
@@ -250,8 +249,8 @@ void find_pd_offset_and_type(pid_control::controller::io_base_t& item, sp_proces
     }
 }
 
-template <typename T>
-inline void add_pds(std::map<std::string, T>& tmp_map, std::map<std::string, pid_control::controller::pd_t>& pds) {
+template <typename T, typename pd_type>
+inline void add_pds(std::map<std::string, T>& tmp_map, std::map<std::string, pd_type>& pds) {
     for (auto& kv : tmp_map) {
         auto &item = kv.second;
         if (pds.find(item.pd) == pds.end()) {
@@ -264,31 +263,39 @@ inline void add_pds(std::map<std::string, T>& tmp_map, std::map<std::string, pid
     }
 }
 
-template<typename T>
+template <typename T>
 inline bool contains(std::list<T> &tmp_list, const T& element) {
     auto it = std::find(tmp_list.begin(), tmp_list.end(), element);
     return it != tmp_list.end();
+}
+
+template <typename key_type, typename value_type>
+value_type& get_map_entry(std::map<key_type, value_type>& tmp_map, key_type& tmp_key) {
+    auto _it = tmp_map.find(tmp_key);
+    if (_it == tmp_map.end())
+        throw str_exception_tb("no map entry found!\n");
+
+    value_type& result = (*_it).second;
+    return result;
 }
 
 //! creating process data input and trigger
 void pid_control::controller::start() {
     kernel& k = *kernel::get_instance();
 
-    add_pds(inputs, pds);
-    add_pds(outputs, pds);
-    add_pds(overrides, pds);
-    add_pds(states, pds);
+    add_pds(inputs, input_pds);
+    add_pds(outputs, output_pds);
 
-    size_t local_outputs_length = 0;
+//    add_pds(overrides, output_pds);
+//    add_pds(states, output_pds);
 
-    for (const auto& kv : outputs) {
-        auto& item = kv.second;
-        pds[item.pd].pd_hash = pds[item.pd].pd->set_provider(shared_from_this());
+    for (auto& kv : outputs) {
+        auto& output = kv.second;
+        auto& output_pd = output_pds[output.pd];
 
-        local_outputs_length += pds[item.pd].pd->length;
+        output_pd.pd_hash = output_pd.pd->set_provider(shared_from_this());
+        output_pd.local_outputs.resize(output_pd.pd->length);
     }
-
-    local_outputs.resize(local_outputs_length);
 
     // create process data 
     std::list<std::string> processed_pd;
@@ -297,23 +304,32 @@ void pid_control::controller::start() {
     emitter << YAML::BeginSeq;
 
     for (auto& name : input_order) {
-        auto& item = (*(inputs.find(name))).second;
+        auto& input = get_map_entry(inputs, name);
+        auto& output = get_map_entry(outputs, input.target);
 
-        if (!contains(processed_pd, item.pd)) {
-            pds[item.pd].pd_ctrl_outputs_offset = cc_outputs_struct_length;
-            cc_outputs_struct_length += pds[item.pd].pd->length;
+        if (!contains(processed_pd, output.pd)) {
+            auto& output_pd = get_map_entry(output_pds, output.pd);
+            output_pd.pd_outputs_offset = cc_outputs_struct_length;
+            cc_outputs_struct_length += output_pd.pd->length;
 
-            YAML::Node pd_node = YAML::Load(pds[item.pd].pd->process_data_definition);
-            for (const auto& list_node : pd_node) 
-                emitter << list_node;
+            string type_prefix = output.pd;
 
-            processed_pd.push_back(item.pd);
+            YAML::Node pd_node = YAML::Load(output_pd.pd->process_data_definition);
+            for (const auto& list_node : pd_node) {
+                for (const auto& map_node : list_node) {
+                    emitter << YAML::BeginMap << map_node.first 
+                        << format_string("%s.%s", type_prefix.c_str(), map_node.second.as<string>().c_str()) << YAML::EndMap;
+                }
+            }
+
+            processed_pd.push_back(output.pd);
         }
 
-        item.pd_ctrl_outputs_offset = cc_outputs_struct_length;
+        input.pd_ctrl_outputs_offset = cc_outputs_struct_length;
         cc_outputs_struct_length += 8 + 8 + 8 + 8 + 8; // val + p + i + d + filter
         
         emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_value", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "uint32_t" << YAML::Value << format_string("cc_%s_mode", name.c_str()) << YAML::EndMap;
         emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_p", name.c_str()) << YAML::EndMap;
         emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_i", name.c_str()) << YAML::EndMap;
         emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_d", name.c_str()) << YAML::EndMap;
@@ -326,6 +342,16 @@ void pid_control::controller::start() {
             parent->name, format_string("%s.outputs", name.c_str()), emitter.c_str());
     pd_ctrl_outputs_hash = pd_ctrl_outputs->set_consumer(shared_from_this());
     k.add_device(pd_ctrl_outputs);
+
+    for (auto& kv : overrides) {
+        auto& item = kv.second;
+        find_pd_offset_and_type(item, pd_ctrl_outputs);
+    }
+
+    for (auto& kv : states) {
+        auto& item = kv.second;
+        find_pd_offset_and_type(item, pd_ctrl_outputs);
+    }
 
     // process data inspection
     k.add_device(shared_from_this());
@@ -377,16 +403,53 @@ void pid_control::controller::tick() {
 
     const auto& buf_out = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
 
-    for (auto& kv : outputs) 
-        kv.second.act_val = 0.;
+    // setting overrides
+    for (auto& pdi : overrides) {
+        auto& output = pdi.second;
 
-    for (auto& kv : inputs) {
-        auto& input = kv.second;
+        uint8_t *adr = &buf_out[output.offset];
+        memcpy(adr, &output.value[0], output.value.size());
+    }
 
-        const auto& buf_in = pds[input.pd].pd->peek();
+    for (auto& kv : outputs) {
+        auto& output = kv.second;
+        auto& output_pd = get_map_entry(output_pds, output.pd);
+        
+        output.act_val = 0.;    
+        
+        // passing values
+        memcpy(&output_pd.local_outputs[0], &buf_out[output_pd.pd_outputs_offset], output_pd.pd->length);
+    }
+
+    // check power states
+    for (auto& kv : states) {
+        auto& ps = kv.second;
+
+        if (!check_state(buf_out, ps))
+            goto tick_exit;
+    }
+
+    for (auto& name : input_order) {
+        auto& input = get_map_entry(inputs, name);
+        auto& output = get_map_entry(outputs, input.target);
+
+        const auto& buf_in = input_pds[input.pd].pd->peek();
         cc_outputs_item_t *cc_outputs = (cc_outputs_item_t *)&buf_out[input.pd_ctrl_outputs_offset];
         
-        double filter_t_const = (1.0 / (2.0 * M_PI * input.filter));
+        double kp = input.kp,
+               ki = input.ki,
+               kd = input.kd,
+               filter = input.filter;
+
+        if (cc_outputs->mode == 1) {
+            // use dynamic gains
+            kp = cc_outputs->p;
+            ki = cc_outputs->i;
+            kd = cc_outputs->d;
+            filter = cc_outputs->filter;
+        }
+
+        double filter_t_const = (1.0 / (2.0 * M_PI * filter));
 
         double msr = val_to_double(buf_in, input);
         double des = cc_outputs->value;
@@ -395,119 +458,30 @@ void pid_control::controller::tick() {
         double d_des = (des - input.des_old) / ts;
         double d_des_filt = filter_first_order(ts, d_des, filter_t_const, &input.d_des_filt_old);
 
-        auto output_it = outputs.find(input.target);
-        if (output_it == outputs.end())
-            throw str_exception("no output with name %s\n", input.target.c_str());
+        // TODO add I part
 
-        auto& output = (*output_it).second;
         output.act_val += 
-            input.kp * (des - msr) + 
-            input.kd * (d_des_filt - d_msr_filt);
+            kp * (des - msr) + 
+            kd * (d_des_filt - d_msr_filt);
 
         input.msr_old = msr;
         input.des_old = des;
     }
 
-#ifdef oldcode
-    auto msr_buf = measure_inputs.pd->peek();
-    auto ctrl_outputs_buf = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);    
-
-    double q_msr = 0., dq_msr = 0., dq_msr_filt = 0.,
-           tau_msr = 0., dtau_msr = 0., dtau_msr_filt = 0.;
-
-    double q_des = 0., dq_des = 0., dq_des_filt = 0., 
-           tau_des = 0., dtau_des = 0., dtau_des_filt = 0.;
-
-    // gains 
-    double kp = gain_pos_proportional;
-    double kd = gain_pos_derivative;
-    double kt = gain_tor_proportional;
-    double ks = gain_tor_derivative;
-
-    // check power states
-    for (auto& ps : power_states) {
-        if (!check_state(ctrl_outputs_buf, ps))
-            return;
+    for (auto& kv : outputs) {
+        auto& output = kv.second;
+        auto& output_pd = get_map_entry(output_pds, output.pd);
+        
+        // setting calculated value
+        double_to_val(&output_pd.local_outputs[0], output, output.act_val);
     }
 
-    auto tmp = ((pos_outputs_t *)(ctrl_outputs_buf + command_outputs.pd->length));
-    q_des = tmp->target_pos;
+tick_exit:
+    for (auto& kv : output_pds) {
+        auto& output_pd = kv.second;
 
-    if (tmp->mode == 1) {
-        kp = tmp->gain_pos_proportional;
-        kd = tmp->gain_pos_derivative;
-        filter_t_const = 1 / (2 * M_PI * tmp->filter_freq);
+        output_pd.pd->write(output_pd.pd_hash, 0, &output_pd.local_outputs[0], output_pd.local_outputs.size()); 
     }
-
-    q_msr = val_to_double(msr_buf, measure_inputs.position);
-    dq_msr = (q_msr - q_msr_old);
-    dq_msr_filt = filter_first_order(ts, dq_msr, filter_t_const, &dq_msr_filt_old) / ts;
-
-    if (with_torque) {
-        tau_msr = val_to_double(msr_buf, measure_inputs.torque);
-        dtau_msr = (tau_msr - tau_msr_old) / ts;
-        dtau_msr_filt = filter_first_order(ts, dtau_msr, filter_t_const, &dtau_msr_filt_old);
-    
-        dtau_des = (tau_des - tau_des_old) / ts;
-        dtau_des_filt = filter_first_order(ts, dtau_des, filter_t_const, &dtau_des_filt_old);
-
-        auto tmp = ((pos_tor_outputs_t *)(ctrl_outputs_buf + command_outputs.pd->length));
-        tau_des = tmp->target_tor;
-
-        if (tmp->mode == 1) {
-            ks = tmp->gain_tor_proportional;
-            kt = tmp->gain_tor_derivative;
-        }
-    }
-
-    // derive and filter desired position and torque
-    dq_des = (q_des - q_des_old) / ts;
-    dq_des_filt = filter_first_order(ts, dq_des, filter_t_const, &dq_des_filt_old);
-
-    if (do_reset) {
-        dtau_des            = 0.;
-        dtau_des_filt       = 0.;
-        dtau_des_filt_old   = 0.;
-        dq_des              = 0.;
-        dq_des_filt         = 0.;
-        dq_des_filt_old     = 0.;
-        dq_msr_filt         = 0.;
-        dtau_msr_filt       = 0.;
-
-        do_reset = false;
-    }
-
-    double tau_m =  
-        kp * (q_des - q_msr) +
-        kd * (dq_des_filt - dq_msr_filt);
-
-//    parent->log(info, "got q des %10.6f, msr %10.6f, tau_m %10.6f\n", q_des, q_msr, tau_m);
-    if (with_torque)
-        tau_m += 
-            kt * (tau_des - tau_msr) +
-            ks * (dtau_des_filt - dtau_msr_filt);
-
-    double des_current = gain_tau_to_i * tau_m;
-    if (des_current > limit_current) des_current = limit_current;
-    if (des_current < -limit_current) des_current = -limit_current;
-
-    // passing values
-    memcpy(&local_outputs[0], &ctrl_outputs_buf[0], command_outputs.pd->length);
-
-    // setting overrides
-    for (auto& pdi : overrides) {
-        uint8_t *adr = &local_outputs[pdi.offset];
-        memcpy(adr, &pdi.value[0], pdi.value.size());
-    }
-
-    // setting calculated current
-    double_to_val(&local_outputs[0], command_outputs.current, des_current);
-
-    command_outputs.pd->write(command_outputs.pd_hash, 0, &local_outputs[0], local_outputs.size()); 
-
-    q_des_old = q_des;
-    tau_des_old = tau_des;
-#endif
 }
                 
 // process data inspection
