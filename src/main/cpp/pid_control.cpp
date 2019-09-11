@@ -166,7 +166,7 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
     parent(parent)
 {
     name = get_as<string>(node, "name");
-    ts = 0.001;
+    ts   = get_as<double>(node, "ts", 0.001);
 
     for (const auto& ci_node : node["inputs"]) {
         string name = get_as<string>(ci_node, "name");
