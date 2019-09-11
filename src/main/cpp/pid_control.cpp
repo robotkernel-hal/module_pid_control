@@ -357,20 +357,26 @@ void pid_control::controller::start() {
     k.add_device(shared_from_this());
 
     /*
-    if (measure_inputs.pd->clk_device != "") {
-        auto clk_dev = k.get_trigger(measure_inputs.pd->clk_device);
-        clk_dev->add_trigger(shared_from_this());
+    for (auto& name : input_order) {
+        auto& input = get_map_entry(inputs, name);
+        auto& input_pd = get_map_entry(input_pds, input.pd);
+    
+        if (measure_inputs.pd->clk_device != "") {
+            auto clk_dev = k.get_trigger(measure_inputs.pd->clk_device);
+            clk_dev->add_trigger(shared_from_this());
 
-        if (clk_dev->get_rate() != 0) {
-            ts = 1. / clk_dev->get_rate();
-            parent->log(info, "added to measurements trigger %s, got clock interval %10.6f\n", 
-                    clk_dev->id().c_str(), ts);
-        } else {
-            parent->log(info, "added to measurements trigger %s, using pre-defined clock interval %10.6f\n", 
-                    clk_dev->id().c_str(), ts);
+            if (clk_dev->get_rate() != 0) {
+                ts = 1. / clk_dev->get_rate();
+                parent->log(info, "added to measurements trigger %s, got clock interval %10.6f\n", 
+                        clk_dev->id().c_str(), ts);
+            } else {
+                parent->log(info, "added to measurements trigger %s, using pre-defined clock interval %10.6f\n", 
+                        clk_dev->id().c_str(), ts);
+            }
         }
     }
     */
+
 }
 
 //! destroying process data input and trigger
@@ -415,7 +421,7 @@ void pid_control::controller::tick() {
         auto& output = kv.second;
         auto& output_pd = get_map_entry(output_pds, output.pd);
         
-        output.act_val = 0.;    
+        output.act_val = output.default_val;    
         
         // passing values
         memcpy(&output_pd.local_outputs[0], &buf_out[output_pd.pd_outputs_offset], output_pd.pd->length);
@@ -425,8 +431,15 @@ void pid_control::controller::tick() {
     for (auto& kv : states) {
         auto& ps = kv.second;
 
-        if (!check_state(buf_out, ps))
+        if (!check_state(buf_out, ps)) {
+            for (auto& name : input_order) {
+                // reset stuff
+                auto& input = get_map_entry(inputs, name);
+                input.i_part = 0.;
+            }
+
             goto tick_exit;
+        }
     }
 
     for (auto& name : input_order) {
@@ -458,10 +471,13 @@ void pid_control::controller::tick() {
         double d_des = (des - input.des_old) / ts;
         double d_des_filt = filter_first_order(ts, d_des, filter_t_const, &input.d_des_filt_old);
 
-        // TODO add I part
+        double i_part = (des - msr);
+        if (fabs(i_part) < input.i_window)
+            input.i_part += i_part;
 
         output.act_val += 
             kp * (des - msr) + 
+            ki * input.i_part + 
             kd * (d_des_filt - d_msr_filt);
 
         input.msr_old = msr;

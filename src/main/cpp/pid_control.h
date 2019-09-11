@@ -99,6 +99,7 @@ class pid_control :
                         kp          = get_as<double>     (ci_node, "kp",         1.);
                         ki          = get_as<double>     (ci_node, "ki",         1.);
                         kd          = get_as<double>     (ci_node, "kd",         1.);
+                        i_window    = get_as<double>     (ci_node, "i_window",   1.);
                         filter      = get_as<double>     (ci_node, "filter",   100.);
                         target      = get_as<std::string>(ci_node, "target"        );
                     }
@@ -107,8 +108,10 @@ class pid_control :
                     double ki;                          //!< integral gain
                     double kd;                          //!< derivative gain
                     double filter;                      //!< filter frequency
+                    double i_window;                    //!< window in between which we integrate
                     std::string target;                 //!< target value
 
+                    double i_part         = 0.;
                     double msr_old        = 0.;
                     double d_msr_filt_old = 0.;
                     double des_old        = 0.;
@@ -121,10 +124,12 @@ class pid_control :
                     output(const YAML::Node& ci_node) : io_base(ci_node) {
                         pd          = get_as<std::string>(ci_node, "pd"            );
                         kt          = get_as<double>     (ci_node, "kt",         1.);
+                        default_val = get_as<double>     (ci_node, "default",    0.);
                     }
 
                     double kt;                          //!< gain
-                    double act_val = 0.;
+                    double default_val;
+                    double act_val      = 0.;
                 } output_t;
 
                 typedef struct override_state : io_base_t {
