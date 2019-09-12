@@ -39,7 +39,6 @@
 
 MODULE_DEF(pid_control, module_pid_control::pid_control)
 
-#define min(a, b) ((a) < (b) ? (a) : (b))
 using namespace robotkernel;
 using namespace std;
 using namespace module_pid_control;
@@ -535,12 +534,40 @@ pid_control::~pid_control() {
     set_state(module_state_init);
 }
 
+#include <regex>
+
 void pid_control::init() {
-    if (config["controllers"]) {
-        for (const auto& ctrl_node : config["controllers"]) {
-            auto d = std::make_shared<controller>(shared_from_this(), ctrl_node);
-            ctrl_list.push_back(d);
+    std::map<std::string, std::string> class_map;
+
+    for (const auto& cls : config["classes"]) {
+        auto class_name = cls.first.as<string>();
+
+        YAML::Emitter out;
+        out << cls.second;
+    
+        auto class_config = out.c_str();
+        class_map[class_name] = class_config;
+    }
+
+    for (const auto& inst : config["instances"]) {
+        auto class_name = get_as<string>(inst, "use_class");
+        auto inst_config = class_map[class_name];
+
+        std::map<string, string> inst_map;
+        for (const auto& kv : inst) {
+            inst_map[kv.first.as<string>()] = kv.second.as<string>();
+            
+            string var = string("(\\$") + kv.first.as<string>() + string(")");
+
+            std::string result;
+            std::regex e (var);
+            std::regex_replace(std::back_inserter(result), inst_config.begin(), inst_config.end(), 
+                    e, kv.second.as<string>());
+            inst_config = result;
         }
+
+        auto d = std::make_shared<controller>(shared_from_this(), YAML::Load(inst_config));
+        ctrl_list.push_back(d);
     }
 }
         
