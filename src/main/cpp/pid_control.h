@@ -182,6 +182,7 @@ class pid_control :
                 robotkernel::sp_process_data_t pd_ctrl_outputs;
                 size_t pd_ctrl_outputs_hash;
 
+                std::string trigger_dev_name;
             private:
                 double ts;
 

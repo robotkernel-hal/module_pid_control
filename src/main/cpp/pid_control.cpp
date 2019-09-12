@@ -201,6 +201,8 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
                     name.c_str(), ps.mask_str.c_str(), ps.value_str.c_str());
         }
     }
+
+    trigger_dev_name = get_as<string>(node, "trigger", "");
 }
 
 void find_pd_offset_and_type(pid_control::controller::io_base_t& item, sp_process_data_t pd) {
@@ -356,32 +358,29 @@ void pid_control::controller::start() {
     // process data inspection
     k.add_device(shared_from_this());
 
-    /*
-    for (auto& name : input_order) {
-        auto& input = get_map_entry(inputs, name);
-        auto& input_pd = get_map_entry(input_pds, input.pd);
-    
-        if (measure_inputs.pd->clk_device != "") {
-            auto clk_dev = k.get_trigger(measure_inputs.pd->clk_device);
-            clk_dev->add_trigger(shared_from_this());
+    if (trigger_dev_name != "") {
+        auto clk_dev = k.get_trigger(trigger_dev_name);
+        clk_dev->add_trigger(shared_from_this());
 
-            if (clk_dev->get_rate() != 0) {
-                ts = 1. / clk_dev->get_rate();
-                parent->log(info, "added to measurements trigger %s, got clock interval %10.6f\n", 
-                        clk_dev->id().c_str(), ts);
-            } else {
-                parent->log(info, "added to measurements trigger %s, using pre-defined clock interval %10.6f\n", 
-                        clk_dev->id().c_str(), ts);
-            }
+        if (clk_dev->get_rate() != 0) {
+            ts = 1. / clk_dev->get_rate();
+            parent->log(info, "added to measurements trigger %s, got clock interval %10.6f\n", 
+                    clk_dev->id().c_str(), ts);
+        } else {
+            parent->log(info, "added to measurements trigger %s, using pre-defined clock interval %10.6f\n", 
+                    clk_dev->id().c_str(), ts);
         }
     }
-    */
-
 }
 
 //! destroying process data input and trigger
 void pid_control::controller::stop() {
     kernel& k = *kernel::get_instance();
+
+    if (trigger_dev_name != "") {
+        auto clk_dev = k.get_trigger(trigger_dev_name);
+        clk_dev->remove_trigger(shared_from_this());
+    }
 
     // process data inspection
     k.remove_device(shared_from_this());
@@ -670,7 +669,9 @@ void pid_control::tick() {
     if (state != module_state_op)
         return;
 
-    for (auto& d : ctrl_list)
-        d->tick();
+    for (auto& d : ctrl_list) {
+        if (d->trigger_dev_name == "")
+            d->tick();
+    }
 }
 
