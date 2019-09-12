@@ -487,6 +487,13 @@ void pid_control::controller::tick() {
     for (auto& kv : outputs) {
         auto& output = kv.second;
         auto& output_pd = get_map_entry(output_pds, output.pd);
+
+        if (output.limit > 0.) {
+            if (output.act_val > output.limit)
+                output.act_val = output.limit;
+            else if (output.act_val < -output.limit)
+                output.act_val = -output.limit;
+        }
         
         // setting calculated value
         double_to_val(&output_pd.local_outputs[0], output, output.act_val);

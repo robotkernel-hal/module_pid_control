@@ -125,10 +125,12 @@ class pid_control :
                         pd          = get_as<std::string>(ci_node, "pd"            );
                         kt          = get_as<double>     (ci_node, "kt",         1.);
                         default_val = get_as<double>     (ci_node, "default",    0.);
+                        limit       = get_as<double>     (ci_node, "limit",      0.);
                     }
 
                     double kt;                          //!< gain
                     double default_val;
+                    double limit;
                     double act_val      = 0.;
                 } output_t;
 
