@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <algorithm>
+#include <regex>
 
 MODULE_DEF(pid_control, module_pid_control::pid_control)
 
@@ -384,6 +385,26 @@ void pid_control::controller::stop() {
 
     // process data inspection
     k.remove_device(shared_from_this());
+
+    k.remove_device(pd_ctrl_outputs);
+    pd_ctrl_outputs->reset_consumer(pd_ctrl_outputs_hash);
+
+    pd_ctrl_outputs_hash = 0;
+    pd_ctrl_outputs = nullptr;
+    
+    for (auto& kv : outputs) {
+        auto& output = kv.second;
+        auto& output_pd = output_pds[output.pd];
+
+        if (!output_pd.pd)
+            continue;
+
+        output_pd.pd->reset_provider(output_pd.pd_hash);
+        output_pd.pd_hash = 0;
+        output_pd.pd = nullptr;
+
+        output_pd.local_outputs.resize(0);
+    }
 }
 
 //! discrete filter first order
@@ -533,8 +554,6 @@ pid_control::pid_control(const std::string& name, const YAML::Node& node) :
 pid_control::~pid_control() {
     set_state(module_state_init);
 }
-
-#include <regex>
 
 void pid_control::init() {
     std::map<std::string, std::string> class_map;
