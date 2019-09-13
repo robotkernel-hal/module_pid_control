@@ -159,6 +159,24 @@ inline bool check_state(uint8_t *base, const struct pid_control::controller::ove
     return false;
 }
 
+//! construction
+/*!
+ * example configuration
+ *
+ * name: my_pid_name
+ * ts: 0.0002
+ * inputs:
+ * - { name: position, pd: device.inputs.pd, field_name: act_position, 
+ *   kp: 2500., ki: 0., kd: 0.005, filter: 100., i_window: 0.0005, target: target_current }
+ * outputs:
+ * - { name: target_current, pd: device.outputs.pd, field_name: target_current, kt: 0.5, limit: 5000. }
+ * overrides:
+ * - { name: mode, field_name: $device.outputs.pd.mode, value: 16 } # current control
+ * power_states:
+ * - { name: control, field_name: device.outputs.pd.control, value: 1, mask: 1 }    
+ * trigger: device.inputs.trigger
+ * 
+ */
 pid_control::controller::controller(std::shared_ptr<pid_control> parent, const YAML::Node& node) :
     pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
     pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
@@ -252,16 +270,21 @@ void find_pd_offset_and_type(pid_control::controller::io_base_t& item, sp_proces
 }
 
 template <typename T, typename pd_type>
+inline void add_pds(T& item, std::map<std::string, pd_type>& pds) {
+    if (pds.find(item.pd) == pds.end()) {
+        pds[item.pd].dev_name = item.pd;
+        pds[item.pd].pd = kernel::get_instance()->get_process_data(item.pd);
+        pds[item.pd].pd_hash = 0;
+    }
+
+    find_pd_offset_and_type(item, pds[item.pd].pd);
+}
+
+template <typename T, typename pd_type>
 inline void add_pds(std::map<std::string, T>& tmp_map, std::map<std::string, pd_type>& pds) {
     for (auto& kv : tmp_map) {
         auto &item = kv.second;
-        if (pds.find(item.pd) == pds.end()) {
-            pds[item.pd].dev_name = item.pd;
-            pds[item.pd].pd = kernel::get_instance()->get_process_data(item.pd);
-            pds[item.pd].pd_hash = 0;
-        }
-    
-        find_pd_offset_and_type(item, pds[item.pd].pd);
+        add_pds(item, pds);
     }
 }
 
@@ -285,15 +308,14 @@ value_type& get_map_entry(std::map<key_type, value_type>& tmp_map, key_type& tmp
 void pid_control::controller::start() {
     kernel& k = *kernel::get_instance();
 
-    add_pds(inputs, input_pds);
-    add_pds(outputs, output_pds);
-
-//    add_pds(overrides, output_pds);
-//    add_pds(states, output_pds);
+    std::for_each(outputs.begin(), outputs.end(), [&](pair<const string, pid_control::controller::output>& kv) {
+            add_pds(kv.second, pds); });
+    std::for_each(inputs.begin(), inputs.end(), [&](pair<const string, pid_control::controller::input>& kv) { 
+            add_pds(kv.second, pds); });
 
     for (auto& kv : outputs) {
         auto& output = kv.second;
-        auto& output_pd = output_pds[output.pd];
+        auto& output_pd = pds[output.pd];
 
         output_pd.pd_hash = output_pd.pd->set_provider(shared_from_this());
         output_pd.local_outputs.resize(output_pd.pd->length);
@@ -310,7 +332,7 @@ void pid_control::controller::start() {
         auto& output = get_map_entry(outputs, input.target);
 
         if (!contains(processed_pd, output.pd)) {
-            auto& output_pd = get_map_entry(output_pds, output.pd);
+            auto& output_pd = get_map_entry(pds, output.pd);
             output_pd.pd_outputs_offset = cc_outputs_struct_length;
             cc_outputs_struct_length += output_pd.pd->length;
 
@@ -340,19 +362,29 @@ void pid_control::controller::start() {
 
     emitter << YAML::EndSeq;
 
-    pd_ctrl_outputs = make_shared<triple_buffer>(cc_outputs_struct_length, 
+    pd_ctrl_outputs.pd = make_shared<triple_buffer>(cc_outputs_struct_length, 
             parent->name, format_string("%s.outputs", name.c_str()), emitter.c_str());
-    pd_ctrl_outputs_hash = pd_ctrl_outputs->set_consumer(shared_from_this());
-    k.add_device(pd_ctrl_outputs);
+    pd_ctrl_outputs.pd_hash = pd_ctrl_outputs.pd->set_consumer(shared_from_this());
+    k.add_device(pd_ctrl_outputs.pd);
+
+    pds[pd_ctrl_outputs.pd->id()] = pd_ctrl_outputs;
 
     for (auto& kv : overrides) {
         auto& item = kv.second;
-        find_pd_offset_and_type(item, pd_ctrl_outputs);
+
+        if (item.pd == "")
+            item.pd = pd_ctrl_outputs.pd->id();
+            
+        add_pds(item, pds);
     }
 
     for (auto& kv : states) {
         auto& item = kv.second;
-        find_pd_offset_and_type(item, pd_ctrl_outputs);
+
+        if (item.pd == "")
+            item.pd = pd_ctrl_outputs.pd->id();
+        
+        add_pds(item, pds);
     }
 
     // process data inspection
@@ -385,15 +417,15 @@ void pid_control::controller::stop() {
     // process data inspection
     k.remove_device(shared_from_this());
 
-    k.remove_device(pd_ctrl_outputs);
-    pd_ctrl_outputs->reset_consumer(pd_ctrl_outputs_hash);
+    k.remove_device(pd_ctrl_outputs.pd);
+    pd_ctrl_outputs.pd->reset_consumer(pd_ctrl_outputs.pd_hash);
 
-    pd_ctrl_outputs_hash = 0;
-    pd_ctrl_outputs = nullptr;
+    pd_ctrl_outputs.pd_hash = 0;
+    pd_ctrl_outputs.pd = nullptr;
     
     for (auto& kv : outputs) {
         auto& output = kv.second;
-        auto& output_pd = output_pds[output.pd];
+        auto& output_pd = pds[output.pd];
 
         if (!output_pd.pd)
             continue;
@@ -426,7 +458,7 @@ void pid_control::controller::tick() {
     if (parent->state != module_state_op)
         return;
 
-    const auto& buf_out = pd_ctrl_outputs->pop(pd_ctrl_outputs_hash);
+    const auto& buf_out = pd_ctrl_outputs.pd->pop(pd_ctrl_outputs.pd_hash);
 
     // setting overrides
     for (auto& pdi : overrides) {
@@ -438,7 +470,7 @@ void pid_control::controller::tick() {
 
     for (auto& kv : outputs) {
         auto& output = kv.second;
-        auto& output_pd = get_map_entry(output_pds, output.pd);
+        auto& output_pd = get_map_entry(pds, output.pd);
         
         output.act_val = output.default_val;    
         
@@ -465,7 +497,7 @@ void pid_control::controller::tick() {
         auto& input = get_map_entry(inputs, name);
         auto& output = get_map_entry(outputs, input.target);
 
-        const auto& buf_in = input_pds[input.pd].pd->peek();
+        const auto& buf_in = pds[input.pd].pd->peek();
         cc_outputs_item_t *cc_outputs = (cc_outputs_item_t *)&buf_out[input.pd_ctrl_outputs_offset];
         
         double kp = input.kp,
@@ -505,7 +537,7 @@ void pid_control::controller::tick() {
 
     for (auto& kv : outputs) {
         auto& output = kv.second;
-        auto& output_pd = get_map_entry(output_pds, output.pd);
+        auto& output_pd = get_map_entry(pds, output.pd);
 
         if (output.limit > 0.) {
             if (output.act_val > output.limit)
@@ -519,10 +551,11 @@ void pid_control::controller::tick() {
     }
 
 tick_exit:
-    for (auto& kv : output_pds) {
+    for (auto& kv : pds) {
         auto& output_pd = kv.second;
 
-        output_pd.pd->write(output_pd.pd_hash, 0, &output_pd.local_outputs[0], output_pd.local_outputs.size()); 
+        if (output_pd.pd_hash)
+            output_pd.pd->write(output_pd.pd_hash, 0, &output_pd.local_outputs[0], output_pd.local_outputs.size()); 
     }
 }
                 

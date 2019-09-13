@@ -49,15 +49,15 @@ enum pd_data_types {
     PD_DT_INT32
 };
 
-const double DEFAULT_FILTER_FREQ           = 100.;
-    
-const double DEFAULT_GAIN_POS_PROPORTIONAL = 1.;
-const double DEFAULT_GAIN_POS_DERIVATIVE   = 1.;
-const double DEFAULT_GAIN_TOR_PROPORTIONAL = 1.;
-const double DEFAULT_GAIN_TOR_DERIVATIVE   = 1.;
-const double DEFAULT_GAIN_TAU_TO_I         = 0.1;
+const double DEFAULT_GAIN_PROPORTIONAL = 1.;
+const double DEFAULT_GAIN_INTEGRAL     = 1.;
+const double DEFAULT_GAIN_DERIVATIVE   = 1.;
+const double DEFAULT_I_WINDOW          = 1.;
+const double DEFAULT_FILTER            = 100.;
 
-const double DEFAULT_LIMIT_CURRENT         = 1.;
+const double DEFAULT_GAIN_OUTPUT       = 1.;
+
+const double DEFAULT_LIMIT             = 0.;
 
 class pid_control :
     public std::enable_shared_from_this<pid_control>,
@@ -96,11 +96,11 @@ class pid_control :
                 typedef struct input : io_base_t {
                     input(const YAML::Node& ci_node) : io_base(ci_node) {
                         pd          = get_as<std::string>(ci_node, "pd"            );
-                        kp          = get_as<double>     (ci_node, "kp",         1.);
-                        ki          = get_as<double>     (ci_node, "ki",         1.);
-                        kd          = get_as<double>     (ci_node, "kd",         1.);
-                        i_window    = get_as<double>     (ci_node, "i_window",   1.);
-                        filter      = get_as<double>     (ci_node, "filter",   100.);
+                        kp          = get_as<double>     (ci_node, "kp",         DEFAULT_GAIN_PROPORTIONAL);
+                        ki          = get_as<double>     (ci_node, "ki",         DEFAULT_GAIN_INTEGRAL);
+                        kd          = get_as<double>     (ci_node, "kd",         DEFAULT_GAIN_DERIVATIVE);
+                        i_window    = get_as<double>     (ci_node, "i_window",   DEFAULT_I_WINDOW);
+                        filter      = get_as<double>     (ci_node, "filter",     DEFAULT_FILTER);
                         target      = get_as<std::string>(ci_node, "target"        );
                     }
 
@@ -123,9 +123,9 @@ class pid_control :
                 typedef struct output : io_base_t {
                     output(const YAML::Node& ci_node) : io_base(ci_node) {
                         pd          = get_as<std::string>(ci_node, "pd"            );
-                        kt          = get_as<double>     (ci_node, "kt",         1.);
+                        kt          = get_as<double>     (ci_node, "kt",         DEFAULT_GAIN_OUTPUT);
                         default_val = get_as<double>     (ci_node, "default",    0.);
-                        limit       = get_as<double>     (ci_node, "limit",      0.);
+                        limit       = get_as<double>     (ci_node, "limit",      DEFAULT_LIMIT);
                     }
 
                     double kt;                          //!< gain
@@ -158,15 +158,12 @@ class pid_control :
                     std::string dev_name;               //!< process data device name
                     robotkernel::sp_process_data_t pd;  //!< process data device from other module
                     size_t pd_hash;                     //!< provider hash
-                } pd_t, input_pd_t;
 
-                typedef struct output_pd : pd_t {
-                    std::vector<uint8_t> local_outputs;
-                    off_t pd_outputs_offset;
-                } output_pd_t;
+                    std::vector<uint8_t> local_outputs; //!< used only in case of output pdo
+                    off_t pd_outputs_offset;            //!< used only in case of output pdo
+                } pd_t;
 
-                std::map<std::string, input_pd_t> input_pds;
-                std::map<std::string, output_pd_t> output_pds;
+                std::map<std::string, pd_t> pds;
 
                 bool do_reset;
 
@@ -179,8 +176,7 @@ class pid_control :
                     double filter;
                 } cc_outputs_item_t;
 
-                robotkernel::sp_process_data_t pd_ctrl_outputs;
-                size_t pd_ctrl_outputs_hash;
+                pd_t pd_ctrl_outputs;
 
                 std::string trigger_dev_name;
             private:
