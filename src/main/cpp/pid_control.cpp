@@ -458,15 +458,16 @@ void pid_control::controller::tick() {
     if (parent->state != module_state_op)
         return;
 
-    const auto& buf_out = pd_ctrl_outputs.pd->pop(pd_ctrl_outputs.pd_hash);
-
     // setting overrides
     for (auto& pdi : overrides) {
         auto& output = pdi.second;
+        auto& output_pd = get_map_entry(pds, output.pd);
 
-        uint8_t *adr = &buf_out[output.offset];
+        uint8_t *adr = &output_pd.pd->peek()[output.offset];
         memcpy(adr, &output.value[0], output.value.size());
     }
+
+    const auto& buf_out = pd_ctrl_outputs.pd->pop(pd_ctrl_outputs.pd_hash);
 
     for (auto& kv : outputs) {
         auto& output = kv.second;
@@ -481,8 +482,11 @@ void pid_control::controller::tick() {
     // check power states
     for (auto& kv : states) {
         auto& ps = kv.second;
+        auto& ps_pd = get_map_entry(pds, ps.pd);
 
-        if (!check_state(buf_out, ps)) {
+        uint8_t *adr = ps_pd.pd->peek();
+
+        if (!check_state(adr, ps)) {
             for (auto& name : input_order) {
                 // reset stuff
                 auto& input = get_map_entry(inputs, name);
