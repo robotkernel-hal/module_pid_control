@@ -167,7 +167,7 @@ inline bool check_state(uint8_t *base, const struct pid_control::controller::ove
  * ts: 0.0002
  * inputs:
  * - { name: position, pd: device.inputs.pd, field_name: act_position, 
- *   kp: 2500., ki: 0., kd: 0.005, filter: 100., i_window: 0.0005, target: target_current }
+ *   kp: 2500., ki: 0., kd: 0.005, filter: 100., i_limit: 0.0005, target: target_current }
  * outputs:
  * - { name: target_current, pd: device.outputs.pd, field_name: target_current, kt: 0.5, limit: 5000. }
  * overrides:
@@ -472,7 +472,7 @@ void pid_control::controller::tick() {
     for (auto& kv : outputs) {
         auto& output = kv.second;
         auto& output_pd = get_map_entry(pds, output.pd);
-        
+
         output.act_val = output.default_val;    
         
         // passing values
@@ -526,14 +526,16 @@ void pid_control::controller::tick() {
         double d_des = (des - input.des_old) / ts;
         double d_des_filt = filter_first_order(ts, d_des, filter_t_const, &input.d_des_filt_old);
 
-        double i_part = (des - msr);
-        if (fabs(i_part) < input.i_window)
-            input.i_part += i_part;
+        input.i_part += ki * (des - msr);
+        if (input.i_part > input.i_limit)
+            input.i_part = input.i_limit;
+        else if (input.i_part < -1 * input.i_limit)
+            input.i_part = -1 * input.i_limit;
 
-        output.act_val += 
-            kp * (des - msr) + 
-            ki * input.i_part + 
-            kd * (d_des_filt - d_msr_filt);
+        output.act_val =  output.kt * (
+                kp * (des - msr) + 
+                input.i_part + 
+                kd * (d_des_filt - d_msr_filt));
 
         input.msr_old = msr;
         input.des_old = des;
@@ -556,6 +558,9 @@ void pid_control::controller::tick() {
 
 tick_exit:
     for (auto& kv : pds) {
+        if (kv.second.dev_name == pd_ctrl_outputs.dev_name)
+            continue;
+
         auto& output_pd = kv.second;
 
         if (output_pd.pd_hash)

@@ -52,7 +52,7 @@ enum pd_data_types {
 const double DEFAULT_GAIN_PROPORTIONAL = 1.;
 const double DEFAULT_GAIN_INTEGRAL     = 1.;
 const double DEFAULT_GAIN_DERIVATIVE   = 1.;
-const double DEFAULT_I_WINDOW          = 1.;
+const double DEFAULT_I_LIMIT           = 1.;
 const double DEFAULT_FILTER            = 100.;
 
 const double DEFAULT_GAIN_OUTPUT       = 1.;
@@ -99,7 +99,7 @@ class pid_control :
                         kp          = get_as<double>     (ci_node, "kp",         DEFAULT_GAIN_PROPORTIONAL);
                         ki          = get_as<double>     (ci_node, "ki",         DEFAULT_GAIN_INTEGRAL);
                         kd          = get_as<double>     (ci_node, "kd",         DEFAULT_GAIN_DERIVATIVE);
-                        i_window    = get_as<double>     (ci_node, "i_window",   DEFAULT_I_WINDOW);
+                        i_limit    = get_as<double>      (ci_node, "i_limit",    DEFAULT_I_LIMIT);
                         filter      = get_as<double>     (ci_node, "filter",     DEFAULT_FILTER);
                         target      = get_as<std::string>(ci_node, "target"        );
                     }
@@ -108,7 +108,7 @@ class pid_control :
                     double ki;                          //!< integral gain
                     double kd;                          //!< derivative gain
                     double filter;                      //!< filter frequency
-                    double i_window;                    //!< window in between which we integrate
+                    double i_limit;                     //!< window in between which we integrate
                     std::string target;                 //!< target value
 
                     double i_part         = 0.;
