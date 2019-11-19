@@ -222,6 +222,9 @@ class pid_control :
         ~pid_control();
 
         //! initializaion
+        /*
+         * parses classes and creates instances.
+         */
         void init();
 
         //! set module state machine to defined state
