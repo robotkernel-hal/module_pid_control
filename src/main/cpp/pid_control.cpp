@@ -610,6 +610,12 @@ void pid_control::init() {
     }
 
     for (const auto& inst : config["instances"]) {
+        if (!inst["use_class"]) {
+            auto d = std::make_shared<controller>(shared_from_this(), inst);
+            ctrl_list.push_back(d);
+            continue;
+        }
+
         auto class_name = get_as<string>(inst, "use_class");
         auto inst_config = class_map[class_name];
 
