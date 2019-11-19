@@ -596,6 +596,10 @@ pid_control::~pid_control() {
     set_state(module_state_init);
 }
 
+//! initializaion
+/*
+ * parses classes and creates instances.
+ */
 void pid_control::init() {
     std::map<std::string, std::string> class_map;
 
