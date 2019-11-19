@@ -573,12 +573,9 @@ void pid_control::controller::get_pdin(service_provider::process_data_inspection
 }
 
 void pid_control::controller::get_pdout(service_provider::process_data_inspection::pd_t& pd) {
-#ifdef oldcode
-    const auto& buf = command_outputs.pd->peek();
-    pd.resize(command_outputs.pd->length);
+    const auto& buf = pd_ctrl_outputs.pd->peek();
+    pd.resize(pd_ctrl_outputs.pd->length);
     memcpy(&pd[0], buf, pd.size());
-#endif
-//    std::copy(buf.begin(), buf.end(), std::back_inserter(pd));
 }
 
 //! construction
