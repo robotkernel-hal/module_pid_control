@@ -38,6 +38,23 @@
 #include <algorithm>
 #include <regex>
 
+#if __cplusplus >= 201103L &&                             \
+    (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
+        (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
+         defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
+             (defined(_GLIBCXX_RELEASE)                && \
+             _GLIBCXX_RELEASE > 4)))
+#define HAVE_WORKING_REGEX 1
+#else
+#define HAVE_WORKING_REGEX 0
+std::string& replace_string(std::string& s, const std::string& from, const std::string& to) {
+    if(!from.empty())
+        for(size_t pos = 0; (pos = s.find(from, pos)) != std::string::npos; pos += to.size())
+            s.replace(pos, from.size(), to);
+    return s;
+}
+#endif
+
 MODULE_DEF(pid_control, module_pid_control::pid_control)
 
 using namespace robotkernel;
@@ -618,19 +635,25 @@ void pid_control::init() {
         }
 
         auto class_name = get_as<string>(inst, "use_class");
-        auto inst_config = class_map[class_name];
+        std::string inst_config = class_map[class_name];
 
         std::map<string, string> inst_map;
         for (const auto& kv : inst) {
-            inst_map[kv.first.as<string>()] = kv.second.as<string>();
-            
-            string var = string("(\\$") + kv.first.as<string>() + string(")");
+            auto key = kv.first.as<string>();
+            auto value = kv.second.as<string>();
 
+            inst_map[key] = value;
+
+#if HAVE_WORKING_REGEX == 1
             std::string result;
+            string var = string("(\\$") + key + string(")");
             std::regex e (var);
-            std::regex_replace(std::back_inserter(result), inst_config.begin(), inst_config.end(), 
-                    e, kv.second.as<string>());
+            result = std::regex_replace(inst_config, e, value);
             inst_config = result;
+#else
+            string var = string("$") + key;
+            replace_string(inst_config, var, value); 
+#endif
         }
 
         auto d = std::make_shared<controller>(shared_from_this(), YAML::Load(inst_config));
