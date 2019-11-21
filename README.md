@@ -2,7 +2,14 @@
 
 This module implements a pid controller.
 
-out = k<sub>p</sub> * (in<sub>desired</sub> - in<sub>actual</sub>)
+d<sub>actual</sub> = (in<sub>actual</sub> - in<sub>actual_old</sub>) / ts
+d<sub>actual_filtered</sub> = filter_first_order(ts, d<sub>actual</sub>, filter_t_const, d<sub>actual_filtered_old</sub>
+d<sub>desired</sub> = (in<sub>desired</sub> - in<sub>desired_old</sub>) / ts
+d<sub>desired_filtered</sub> = filter_first_order(ts, d<sub>desired</sub>, filter_t_const, d<sub>desired_filtered_old</sub>
+
+i<sub>part</sub> += clamp(k<sub>i</sub> * (in<sub>desired</sub> - in<sub>actual</sub>), i<sub>limit</sub>)
+
+out = k<sub>p</sub> * (in<sub>desired</sub> - in<sub>actual</sub>) + i<sub>part</sub> + k<sub>d</sub> * (d<sub>desired_filtered</sub> - d<sub>actual_filtered</sub>)
 
 ## Example configuration
 
