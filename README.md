@@ -16,7 +16,7 @@ out<sub>desired</sub> = k<sub>p</sub> * (in<sub>desired</sub> - in<sub>actual</s
 
 The following example shows a configuration used to calculate linmot demand current depending on actual and target position.
 
-```
+```yaml
 - name: linmot_pid_control
   so_file: libmodule_pid_control.so
   config:
@@ -33,14 +33,24 @@ The following example shows a configuration used to calculate linmot demand curr
         - { name: mode, field_name: $lm_handler.outputs.pd.mode, value: 16 } # current control
         power_states:
         - { name: control, field_name: $lm_handler.outputs.pd.control, value: 1, mask: 1 }    
-        trigger: $trigger
+        trigger: $lm_handler.inputs.trigger
     instances:
-    - { name: linmot_1_cc, use_class: linmot_cc, lm_handler: linmot_1_handler, trigger: linmot_1_handler.inputs.trigger }
-    #- { name: linmot_2_cc, use_class: linmot_cc, lm_handler: linmot_2_handler }
-    #- { name: linmot_3_cc, use_class: linmot_cc, lm_handler: linmot_3_handler }
-    #- { name: linmot_4_cc, use_class: linmot_cc, lm_handler: linmot_4_handler }
-    #- { name: linmot_5_cc, use_class: linmot_cc, lm_handler: linmot_5_handler }
-  depends: [ linmot_1_handler ] #, linmot_2_handler, linmot_3_handler
+    - { name: linmot_1_cc, use_class: linmot_cc, lm_handler: linmot_1_handler }
+    - { name: linmot_2_cc, use_class: linmot_cc, lm_handler: linmot_2_handler }
+    - { name: linmot_3_cc, use_class: linmot_cc, lm_handler: linmot_3_handler }
+  depends: [ linmot_1_handler, linmot_2_handler, linmot_3_handler ]
   power_up: op
 ```
+
+### Classes and Instances
+
+To made it easier to instanciate multiple pid controller with the same config you can create **classes** and **instances**.
+
+### PID config options
+
+__name__: Each PID controller instance must have a unique name. This name is used to generate the appropriate robotkernel-5 process data devices.  
+
+__inputs__: jajj
+
+
 
