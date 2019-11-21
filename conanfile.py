@@ -4,12 +4,15 @@ import re
 class MainProject(ConanFile):
     name = "module_pid_control"
     license = "GPLv3"
+    author = "Robert Burger <robert.burger@dlr.de>"
     url = f"https://rmc-github.robotic.dlr.de/robotkernel/{name}"
     description = "robotkernel-5 is a modular, easy configurable hardware abstraction framework"
     settings = "os", "compiler", "build_type", "arch"
     exports_sources = "src/*", "README.wiki", "project.properties", "module_pid_control.pc.in", "Makefile.am", "m4/*", "configure.ac", "LICENSE"
     generators = "pkg_config"
-    requires = "robotkernel/[~=5.0]@robotkernel/unstable", "service_provider_process_data_inspection/[~=5]@robotkernel/unstable"
+    requires = (
+            "robotkernel/[~=5]@robotkernel/stable",
+            "service_provider_process_data_inspection/[~=5]@robotkernel/stable" )
 
     def source(self):
         filedata = None
@@ -25,10 +28,6 @@ class MainProject(ConanFile):
         autotools.libs=[]
         autotools.include_paths=[]
         autotools.library_paths=[]
-        if self.settings.build_type == "Debug":
-            autotools.flags = ["-O0", "-g"]
-        else:
-            autotools.flags = ["-O3"]
         autotools.configure(configure_dir=".")
         autotools.make()
 
