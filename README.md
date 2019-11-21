@@ -1,5 +1,5 @@
 # module_pid_control
-
+======
 This module implements a pid controller.
 
 
@@ -13,7 +13,7 @@ i<sub>part</sub> += clamp(k<sub>i</sub> * (in<sub>desired</sub> - in<sub>actual<
 out<sub>desired</sub> = k<sub>p</sub> * (in<sub>desired</sub> - in<sub>actual</sub>) + i<sub>part</sub> + k<sub>d</sub> * (d<sub>desired_filtered</sub> - d<sub>actual_filtered</sub>)  
 
 ## Example configuration
-
+------
 The following example shows a configuration used to calculate linmot demand current depending on actual and target position.
 
 ```yaml
@@ -43,13 +43,19 @@ The following example shows a configuration used to calculate linmot demand curr
 ```
 
 ### Classes and Instances
-
+------
 To made it easier to instanciate multiple pid controller with the same config you can create **classes** and **instances**.
 
 ### PID config options
-
+------
 __name__: Each PID controller instance must have a unique name. This name is used to generate the appropriate robotkernel-5 process data devices.  
 
-__inputs__: jajj
-··__name__:
+#### inputs
+  
+__name__:
 
+#### outputs
+
+#### power_states
+
+#### overrides
