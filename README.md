@@ -51,6 +51,5 @@ To made it easier to instanciate multiple pid controller with the same config yo
 __name__: Each PID controller instance must have a unique name. This name is used to generate the appropriate robotkernel-5 process data devices.  
 
 __inputs__: jajj
-
-
+··__name__:
 
