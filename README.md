@@ -2,7 +2,7 @@
 
 The **module_pid_control** is used to do PID control of given measurements to a command value. 
 
-The output is calculation with the following equations: 
+The output is calculated with the following equations: 
 
 <img src="https://latex.codecogs.com/svg.latex?\Large&space;p_{part}=kp*(des_{in}-msr_{in})" title="\Large p_{part}=kp*(des_{in}-msr_{in})" />
 <img src="https://latex.codecogs.com/svg.latex?\Large&space;i_{part}=\sum_{t} (ki * (des_{in} - msr_{in})" title="\Large i_{part}=\sum_{t} (ki * (des_{in} - msr_{in})" />
