@@ -1,5 +1,7 @@
 # module_pid_control
 
+The **module_pid_control** is used to do PID control of given measurements to a command value. 
+
 ```yaml
 - name: my_pid_control
   so_file: libmodule_pid_control.so
