@@ -4,10 +4,10 @@ The **module_pid_control** is used to do PID control of given measurements to a 
 
 The output is calculation with the following equations: 
 
-<img src="https://latex.codecogs.com/svg.latex?\Large&space;p_{part}=kp*(des_{in}-msr_{in})" title="\Large x=kp*(des_{in}-msr_{in})" />
-<img src="https://latex.codecogs.com/svg.latex?\Large&space;i_{part}=\sum_{t} (ki * (des_{in} - msr_{in})" title="\Large x=kp*(des_{in}-msr_{in})" />
-<img src="https://latex.codecogs.com/svg.latex?\Large&space;d_{part}=kd * (\frac{des_{in,n} - des_{in,n-1}}{t}-\frac{msr_{in,n} - msr_{in,n-1}}{t})" title="\Large x=kp*(des_{in}-msr_{in})" />
-<img src="https://latex.codecogs.com/svg.latex?\Large&space;x_{out}=p_{part}+i_{part}+d_{part}" title="\Large x=kp*(des_{in}-msr_{in})" />
+<img src="https://latex.codecogs.com/svg.latex?\Large&space;p_{part}=kp*(des_{in}-msr_{in})" title="\Large p_{part}=kp*(des_{in}-msr_{in})" />
+<img src="https://latex.codecogs.com/svg.latex?\Large&space;i_{part}=\sum_{t} (ki * (des_{in} - msr_{in})" title="\Large i_{part}=\sum_{t} (ki * (des_{in} - msr_{in})" />
+<img src="https://latex.codecogs.com/svg.latex?\Large&space;d_{part}=kd * (\frac{des_{in,n} - des_{in,n-1}}{t}-\frac{msr_{in,n} - msr_{in,n-1}}{t})" title="\Large kd * (\frac{des_{in,n} - des_{in,n-1}}{t}-\frac{msr_{in,n} - msr_{in,n-1}}{t})" />
+<img src="https://latex.codecogs.com/svg.latex?\Large&space;x_{out}=kt*(p_{part}+i_{part}+d_{part})" title="\Large x_{out}=kt*(p_{part}+i_{part}+d_{part})" />
 
 The derivative component are also filtered using a first order filter with frequency given in configuration.
 
