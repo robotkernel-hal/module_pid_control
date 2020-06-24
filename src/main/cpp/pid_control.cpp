@@ -38,34 +38,29 @@
 #include <algorithm>
 #include <regex>
 
+#if __cplusplus >= 201103L &&                             \
+    (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
+        (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
+         defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
+             (defined(_GLIBCXX_RELEASE)                && \
+             _GLIBCXX_RELEASE > 4)))
+#define HAVE_WORKING_REGEX 1
+#else
+#define HAVE_WORKING_REGEX 0
+std::string& replace_string(std::string& s, const std::string& from, const std::string& to) {
+    if(!from.empty())
+        for(size_t pos = 0; (pos = s.find(from, pos)) != std::string::npos; pos += to.size())
+            s.replace(pos, from.size(), to);
+    return s;
+}
+#endif
+
 MODULE_DEF(pid_control, module_pid_control::pid_control)
 
 using namespace robotkernel;
 using namespace std;
 using namespace module_pid_control;
 using namespace string_util;
-
-std::map<std::string, size_t> dt_to_len = {
-    { "float",    4 },
-    { "double",   8 },
-    { "uint8_t",  1 },
-    { "uint16_t", 2 },
-    { "uint32_t", 4 },
-    { "int8_t",   1 },
-    { "int16_t",  2 },
-    { "int32_t",  4 },
-};
-
-std::map<std::string, pd_data_types> pd_dt_map = {
-    { "float",    PD_DT_FLOAT  },
-    { "double",   PD_DT_DOUBLE },
-    { "uint8_t",  PD_DT_UINT8  },
-    { "uint16_t", PD_DT_UINT16 },
-    { "uint32_t", PD_DT_UINT32 },
-    { "int8_t",   PD_DT_INT8   },
-    { "int16_t",  PD_DT_INT16  },
-    { "int32_t",  PD_DT_INT32  },
-};
 
 inline double val_to_double(uint8_t *base, const struct pid_control::controller::io_base& item) {
     switch (item.type) {
@@ -223,52 +218,6 @@ pid_control::controller::controller(std::shared_ptr<pid_control> parent, const Y
     trigger_dev_name = get_as<string>(node, "trigger", "");
 }
 
-void find_pd_offset_and_type(pid_control::controller::io_base_t& item, sp_process_data_t pd) {
-    if (item.field_name != "") {
-        // need to find offset and type
-        if (pd->process_data_definition == "")
-            throw str_exception("process data \"%s\" has no description, "
-                    "cannot determine pos offset!\n", pd->id().c_str());
-
-        YAML::Node pdd_node = YAML::Load(pd->process_data_definition);
-
-        item.offset = 0;
-
-        for (const auto& list_el : pdd_node) {
-            for (const auto& kv : list_el) {
-                string act_dt = kv.first.as<string>();
-                string act_name = kv.second.as<string>();
-
-                if (act_name == item.field_name) {
-                    item.type_str = act_dt;
-                    item.type = pd_dt_map[act_dt];
-    
-                    try {
-                        auto& os = dynamic_cast<pid_control::controller::override_state&>(item);
-                        if (os.value_str != "") {
-                            convert_str_val(os.type, os.value_str, os.value);
-                        }
-
-                        if (os.mask_str != "") {
-                            convert_str_val(os.type, os.mask_str, os.mask);
-                        }
-                    } catch (std::bad_cast exp) {}
-                    
-                    return;
-                }
-
-                if (dt_to_len.find(act_dt) == dt_to_len.end())
-                    throw str_exception("unsupported data type in pd description: %s\n", act_dt.c_str());
-
-                item.offset += dt_to_len[act_dt];
-            }
-        }
-
-        throw str_exception("member \"%s\" not found in measurement process data description:\n%s\n",
-                item.field_name.c_str(), pd->process_data_definition.c_str());
-    }
-}
-
 template <typename T, typename pd_type>
 inline void add_pds(T& item, std::map<std::string, pd_type>& pds) {
     if (pds.find(item.pd) == pds.end()) {
@@ -277,7 +226,18 @@ inline void add_pds(T& item, std::map<std::string, pd_type>& pds) {
         pds[item.pd].pd_hash = 0;
     }
 
-    find_pd_offset_and_type(item, pds[item.pd].pd);
+    pds[item.pd].pd->find_pd_offset_and_type(item.field_name, item.type_str, item.type, item.offset);
+                        
+    try {
+        auto& os = dynamic_cast<pid_control::controller::override_state&>(item);
+        if (os.value_str != "") {
+            convert_str_val(os.type, os.value_str, os.value);
+        }
+
+        if (os.mask_str != "") {
+            convert_str_val(os.type, os.mask_str, os.mask);
+        }
+    } catch (std::bad_cast exp) {}
 }
 
 template <typename T, typename pd_type>
@@ -573,12 +533,9 @@ void pid_control::controller::get_pdin(service_provider::process_data_inspection
 }
 
 void pid_control::controller::get_pdout(service_provider::process_data_inspection::pd_t& pd) {
-#ifdef oldcode
-    const auto& buf = command_outputs.pd->peek();
-    pd.resize(command_outputs.pd->length);
+    const auto& buf = pd_ctrl_outputs.pd->peek();
+    pd.resize(pd_ctrl_outputs.pd->length);
     memcpy(&pd[0], buf, pd.size());
-#endif
-//    std::copy(buf.begin(), buf.end(), std::back_inserter(pd));
 }
 
 //! construction
@@ -596,6 +553,10 @@ pid_control::~pid_control() {
     set_state(module_state_init);
 }
 
+//! initializaion
+/*
+ * parses classes and creates instances.
+ */
 void pid_control::init() {
     std::map<std::string, std::string> class_map;
 
@@ -610,20 +571,32 @@ void pid_control::init() {
     }
 
     for (const auto& inst : config["instances"]) {
+        if (!inst["use_class"]) {
+            auto d = std::make_shared<controller>(shared_from_this(), inst);
+            ctrl_list.push_back(d);
+            continue;
+        }
+
         auto class_name = get_as<string>(inst, "use_class");
-        auto inst_config = class_map[class_name];
+        std::string inst_config = class_map[class_name];
 
         std::map<string, string> inst_map;
         for (const auto& kv : inst) {
-            inst_map[kv.first.as<string>()] = kv.second.as<string>();
-            
-            string var = string("(\\$") + kv.first.as<string>() + string(")");
+            auto key = kv.first.as<string>();
+            auto value = kv.second.as<string>();
 
+            inst_map[key] = value;
+
+#if HAVE_WORKING_REGEX == 1
             std::string result;
+            string var = string("(\\$") + key + string(")");
             std::regex e (var);
-            std::regex_replace(std::back_inserter(result), inst_config.begin(), inst_config.end(), 
-                    e, kv.second.as<string>());
+            result = std::regex_replace(inst_config, e, value);
             inst_config = result;
+#else
+            string var = string("$") + key;
+            replace_string(inst_config, var, value); 
+#endif
         }
 
         auto d = std::make_shared<controller>(shared_from_this(), YAML::Load(inst_config));

@@ -38,17 +38,6 @@ namespace module_pid_control {
 }
 #endif
 
-enum pd_data_types {
-    PD_DT_FLOAT = 1,
-    PD_DT_DOUBLE,
-    PD_DT_UINT8,
-    PD_DT_UINT16,
-    PD_DT_UINT32,
-    PD_DT_INT8,
-    PD_DT_INT16,
-    PD_DT_INT32
-};
-
 const double DEFAULT_GAIN_PROPORTIONAL = 1.;
 const double DEFAULT_GAIN_INTEGRAL     = 1.;
 const double DEFAULT_GAIN_DERIVATIVE   = 1.;
@@ -89,7 +78,7 @@ class pid_control :
                     std::string field_name;             //!< field name in process data
                     off_t offset;                       //!< offset of process data field
                     std::string type_str;               //!< data type name of field
-                    pd_data_types type;                 //!< data type of field
+                    robotkernel::pd_data_types type;    //!< data type of field
                     double scale;                       //!< field scaling
                 } io_base_t;
 
@@ -222,6 +211,9 @@ class pid_control :
         ~pid_control();
 
         //! initializaion
+        /*
+         * parses classes and creates instances.
+         */
         void init();
 
         //! set module state machine to defined state

@@ -1,0 +1,49 @@
+# Configuration file for robotkernel-5 module_pid_control.
+#
+# vi: set ft=yaml nowrap:
+# -*- mode: yaml -*-
+
+#########################################################
+# general settings
+
+#########################################################
+# logging settings
+
+# Standard robotkernel loglevel.
+loglevel: verbose
+
+#########################################################
+# pid control classes settings
+# for all common stuff of device instances
+classes:
+  # template name
+  linmot_cc:
+    # instance name
+    name: $name
+
+    # input settings
+    inputs:
+    - { name: position, pd: $lm_handler.inputs.pd, field_name: act_position, 
+      kp: 3000., ki: 30., kd: 5., filter: 75., i_limit: 1., target: target_current }
+
+    # output settings
+    # all of these output pds will be routed to a new control output pd
+    outputs:
+    - { name: target_current, pd: $lm_handler.outputs.pd, field_name: target_current, kt: 1.0, limit: 10. }
+
+    # overrides
+    overrides:
+    - { name: mode, field_name: $lm_handler.outputs.pd.mode, value: 16 } # current control
+
+    # power states
+    power_states:
+    - { name: control, field_name: $lm_handler.outputs.pd.control, value: 1, mask: 1 }    
+
+    # trigger device settings
+    trigger: $trigger
+
+#########################################################
+# pid control instances settings
+instances:
+- { name: linmot_1_cc, use_class: linmot_cc, lm_handler: linmot_1_handler, trigger: linmot_1_handler.inputs.trigger }
+
