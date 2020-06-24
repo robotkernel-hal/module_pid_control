@@ -1,19 +1,49 @@
+# Configuration file for robotkernel-5 module_pid_control.
+#
+# vi: set ft=yaml nowrap:
+# -*- mode: yaml -*-
 
-linmot_ctrl: &linmot_ctrl
-  inputs:
-    position: { kp: 0.5, kd: 0.001, filter: 200, target: current, pd: inputs, field_name: Actual Position, scale: 1E-10 } 
-    torque: { kp: 0.02, kd: 0.0008, filter: 100, target: current, pd: inputs, field_name: Actual Torque,   scale: 1E-6 }
-  outputs:
-    current: { kt: 0.1, pd: outputs, name: Command Current, scale: 1E-3 }
+#########################################################
+# general settings
 
-modules:
-- name: my_current_control
-  so_file: libmodule_current_control.so
-  config: 
-    controllers:
-    - { <<: *linmot_ctrl, name: linmot_0, pd_map: { inputs: ecat.slave_0.inputs.pd, outputs: ecat.slave_0.outputs.pd } }
-    - { <<: *linmot_ctrl, name: linmot_1, pd_map: { inputs: ecat.slave_1.inputs.pd, outputs: ecat.slave_1.outputs.pd } }
-    - { <<: *linmot_ctrl, name: linmot_2, pd_map: { inputs: ecat.slave_2.inputs.pd, outputs: ecat.slave_2.outputs.pd } }
-    - { <<: *linmot_ctrl, name: linmot_3, pd_map: { inputs: ecat.slave_3.inputs.pd, outputs: ecat.slave_3.outputs.pd } }
-    - { <<: *linmot_ctrl, name: linmot_4, pd_map: { inputs: ecat.slave_4.inputs.pd, outputs: ecat.slave_4.outputs.pd } }
+#########################################################
+# logging settings
+
+# Standard robotkernel loglevel.
+loglevel: verbose
+
+#########################################################
+# pid control classes settings
+# for all common stuff of device instances
+classes:
+  # template name
+  linmot_cc:
+    # instance name
+    name: $name
+
+    # input settings
+    inputs:
+    - { name: position, pd: $lm_handler.inputs.pd, field_name: act_position, 
+      kp: 3000., ki: 30., kd: 5., filter: 75., i_limit: 1., target: target_current }
+
+    # output settings
+    # all of these output pds will be routed to a new control output pd
+    outputs:
+    - { name: target_current, pd: $lm_handler.outputs.pd, field_name: target_current, kt: 1.0, limit: 10. }
+
+    # overrides
+    overrides:
+    - { name: mode, field_name: $lm_handler.outputs.pd.mode, value: 16 } # current control
+
+    # power states
+    power_states:
+    - { name: control, field_name: $lm_handler.outputs.pd.control, value: 1, mask: 1 }    
+
+    # trigger device settings
+    trigger: $trigger
+
+#########################################################
+# pid control instances settings
+instances:
+- { name: linmot_1_cc, use_class: linmot_cc, lm_handler: linmot_1_handler, trigger: linmot_1_handler.inputs.trigger }
 
