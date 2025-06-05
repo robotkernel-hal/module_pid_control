@@ -48,6 +48,9 @@ const double DEFAULT_GAIN_OUTPUT       = 1.;
 
 const double DEFAULT_LIMIT             = 0.;
 
+using service_provider::process_data_inspection::sp_pd_inspection_t;
+using service_provider::process_data_inspection::pd_inspection;
+
 class pid_control :
     public std::enable_shared_from_this<pid_control>,
     public robotkernel::module_base
@@ -55,10 +58,7 @@ class pid_control :
     public:
         class controller : 
             public std::enable_shared_from_this<controller>,
-            public robotkernel::trigger_base,
-            public robotkernel::pd_provider,
-            public robotkernel::pd_consumer,
-            public service_provider::process_data_inspection::base
+            public robotkernel::trigger_base
         {
             public:
                 std::string name;
@@ -88,7 +88,7 @@ class pid_control :
                         kp          = get_as<double>     (ci_node, "kp",         DEFAULT_GAIN_PROPORTIONAL);
                         ki          = get_as<double>     (ci_node, "ki",         DEFAULT_GAIN_INTEGRAL);
                         kd          = get_as<double>     (ci_node, "kd",         DEFAULT_GAIN_DERIVATIVE);
-                        i_limit    = get_as<double>      (ci_node, "i_limit",    DEFAULT_I_LIMIT);
+                        i_limit     = get_as<double>      (ci_node, "i_limit",   DEFAULT_I_LIMIT);
                         filter      = get_as<double>     (ci_node, "filter",     DEFAULT_FILTER);
                         target      = get_as<std::string>(ci_node, "target"        );
                     }
@@ -146,7 +146,9 @@ class pid_control :
                 typedef struct pd {
                     std::string dev_name;               //!< process data device name
                     robotkernel::sp_process_data_t pd;  //!< process data device from other module
-                    size_t pd_hash;                     //!< provider hash
+                    robotkernel::sp_pd_provider_t provider;
+                    robotkernel::sp_pd_consumer_t consumer;
+                    sp_pd_inspection_t inspection;
 
                     std::vector<uint8_t> local_outputs; //!< used only in case of output pdo
                     off_t pd_outputs_offset;            //!< used only in case of output pdo

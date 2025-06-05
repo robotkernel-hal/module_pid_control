@@ -1,10 +1,11 @@
-from conans import tools, python_requires
+from conan import ConanFile
 
-base = python_requires("conan_template/[~=5]@robotkernel/stable")
+class MainProject(ConanFile):
+    python_requires = "conan_template/[^5.0.6]@robotkernel/stable"
+    python_requires_extend = "conan_template.RobotkernelConanFile"
 
-class MainProject(base.RobotkernelConanFile):
     name = "module_pid_control"
-    description = "robotkernel-5 is a modular, easy configurable hardware abstraction framework"
-    exports_sources = ["*", "!.gitignore"] + ["!%s" % x for x in tools.Git().excluded_files()]
-    requires = "robotkernel/[~=5]@robotkernel/stable", "service_provider_process_data_inspection/[~=5]@robotkernel/stable"
+    description = ""
+    exports_sources = ["*", "!.gitignore"]
+    requires = "robotkernel/[~6]@robotkernel/unstable", "service_provider_process_data_inspection/[~6]@robotkernel/unstable"
 

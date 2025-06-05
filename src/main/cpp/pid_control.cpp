@@ -78,6 +78,8 @@ inline double val_to_double(uint8_t *base, const struct pid_control::controller:
         CASE_PD_DT(PD_DT_INT8, int8_t)
         CASE_PD_DT(PD_DT_INT16, int16_t)
         CASE_PD_DT(PD_DT_INT32, int32_t)
+        default:
+            break;
 
 #undef CASE_PD_DT
 
@@ -102,12 +104,14 @@ inline void double_to_val(uint8_t *base, const struct pid_control::controller::i
         CASE_PD_DT(PD_DT_INT8, int8_t)
         CASE_PD_DT(PD_DT_INT16, int16_t)
         CASE_PD_DT(PD_DT_INT32, int32_t)
+        default:
+            break;
 
 #undef CASE_PD_DT
     }
 }
 
-inline void convert_str_val(const pd_data_types& type, const std::string& value_str,
+inline void local_convert_str_val(const pd_data_types& type, const std::string& value_str,
         std::vector<uint8_t>& value) {
     switch (type) {
 #define CASE_PD_DT(dt_enum, dtype, cvrt)                                    \
@@ -125,6 +129,8 @@ inline void convert_str_val(const pd_data_types& type, const std::string& value_
         CASE_PD_DT(PD_DT_INT8, int8_t, atoi)
         CASE_PD_DT(PD_DT_INT16, int16_t, atoi)
         CASE_PD_DT(PD_DT_INT32, int32_t, atoi)
+        default:
+            break;
         
 #undef CASE_PD_DT
     }
@@ -173,9 +179,6 @@ inline bool check_state(uint8_t *base, const struct pid_control::controller::ove
  * 
  */
 pid_control::controller::controller(std::shared_ptr<pid_control> parent, const YAML::Node& node) :
-    pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
-    pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
-    service_provider::process_data_inspection::base(parent->name, get_as<string>(node, "name")),
     parent(parent)
 {
     name = get_as<string>(node, "name");
@@ -223,7 +226,9 @@ inline void add_pds(T& item, std::map<std::string, pd_type>& pds) {
     if (pds.find(item.pd) == pds.end()) {
         pds[item.pd].dev_name = item.pd;
         pds[item.pd].pd = kernel::get_instance()->get_process_data(item.pd);
-        pds[item.pd].pd_hash = 0;
+        pds[item.pd].provider = nullptr;
+        pds[item.pd].consumer = nullptr;
+        pds[item.pd].inspection = nullptr;
     }
 
     pds[item.pd].pd->find_pd_offset_and_type(item.field_name, item.type_str, item.type, item.offset);
@@ -231,11 +236,11 @@ inline void add_pds(T& item, std::map<std::string, pd_type>& pds) {
     try {
         auto& os = dynamic_cast<pid_control::controller::override_state&>(item);
         if (os.value_str != "") {
-            convert_str_val(os.type, os.value_str, os.value);
+            local_convert_str_val(os.type, os.value_str, os.value);
         }
 
         if (os.mask_str != "") {
-            convert_str_val(os.type, os.mask_str, os.mask);
+            local_convert_str_val(os.type, os.mask_str, os.mask);
         }
     } catch (std::bad_cast exp) {}
 }
@@ -277,7 +282,8 @@ void pid_control::controller::start() {
         auto& output = kv.second;
         auto& output_pd = pds[output.pd];
 
-        output_pd.pd_hash = output_pd.pd->set_provider(shared_from_this());
+        output_pd.provider = make_shared<pd_provider>(name);
+        output_pd.pd->set_provider(output_pd.provider);
         output_pd.local_outputs.resize(output_pd.pd->length);
     }
 
@@ -324,7 +330,8 @@ void pid_control::controller::start() {
 
     pd_ctrl_outputs.pd = make_shared<triple_buffer>(cc_outputs_struct_length, 
             parent->name, format_string("%s.outputs", name.c_str()), emitter.c_str());
-    pd_ctrl_outputs.pd_hash = pd_ctrl_outputs.pd->set_consumer(shared_from_this());
+    pd_ctrl_outputs.consumer = make_shared<pd_consumer>(name);
+    pd_ctrl_outputs.pd->set_consumer(pd_ctrl_outputs.consumer);
     k.add_device(pd_ctrl_outputs.pd);
 
     pds[pd_ctrl_outputs.pd->id()] = pd_ctrl_outputs;
@@ -348,7 +355,7 @@ void pid_control::controller::start() {
     }
 
     // process data inspection
-    k.add_device(shared_from_this());
+//TODO    k.add_device(shared_from_this());
 
     if (trigger_dev_name != "") {
         auto clk_dev = k.get_trigger(trigger_dev_name);
@@ -375,12 +382,12 @@ void pid_control::controller::stop() {
     }
 
     // process data inspection
-    k.remove_device(shared_from_this());
+   //TODO k.remove_device(shared_from_this());
 
     k.remove_device(pd_ctrl_outputs.pd);
-    pd_ctrl_outputs.pd->reset_consumer(pd_ctrl_outputs.pd_hash);
+    pd_ctrl_outputs.pd->reset_consumer(pd_ctrl_outputs.consumer);
 
-    pd_ctrl_outputs.pd_hash = 0;
+    pd_ctrl_outputs.consumer = nullptr;
     pd_ctrl_outputs.pd = nullptr;
     
     for (auto& kv : outputs) {
@@ -390,8 +397,8 @@ void pid_control::controller::stop() {
         if (!output_pd.pd)
             continue;
 
-        output_pd.pd->reset_provider(output_pd.pd_hash);
-        output_pd.pd_hash = 0;
+        output_pd.pd->reset_provider(output_pd.provider);
+        output_pd.provider = nullptr;
         output_pd.pd = nullptr;
 
         output_pd.local_outputs.resize(0);
@@ -427,7 +434,7 @@ void pid_control::controller::tick() {
         memcpy(adr, &output.value[0], output.value.size());
     }
 
-    const auto& buf_out = pd_ctrl_outputs.pd->pop(pd_ctrl_outputs.pd_hash);
+    const auto& buf_out = pd_ctrl_outputs.pd->pop(pd_ctrl_outputs.consumer);
 
     for (auto& kv : outputs) {
         auto& output = kv.second;
@@ -523,8 +530,8 @@ tick_exit:
 
         auto& output_pd = kv.second;
 
-        if (output_pd.pd_hash)
-            output_pd.pd->write(output_pd.pd_hash, 0, &output_pd.local_outputs[0], output_pd.local_outputs.size()); 
+        if (output_pd.provider)
+            output_pd.pd->write(output_pd.provider, 0, &output_pd.local_outputs[0], output_pd.local_outputs.size()); 
     }
 }
                 
