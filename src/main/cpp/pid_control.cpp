@@ -225,7 +225,7 @@ template <typename T, typename pd_type>
 inline void add_pds(T& item, std::map<std::string, pd_type>& pds) {
     if (pds.find(item.pd) == pds.end()) {
         pds[item.pd].dev_name = item.pd;
-        pds[item.pd].pd = kernel::get_instance()->get_process_data(item.pd);
+        pds[item.pd].pd = robotkernel::get_device<process_data>(item.pd);
         pds[item.pd].provider = nullptr;
         pds[item.pd].consumer = nullptr;
         pds[item.pd].inspection = nullptr;
@@ -271,8 +271,6 @@ value_type& get_map_entry(std::map<key_type, value_type>& tmp_map, key_type& tmp
 
 //! creating process data input and trigger
 void pid_control::controller::start() {
-    kernel& k = *kernel::get_instance();
-
     std::for_each(outputs.begin(), outputs.end(), [&](pair<const string, pid_control::controller::output>& kv) {
             add_pds(kv.second, pds); });
     std::for_each(inputs.begin(), inputs.end(), [&](pair<const string, pid_control::controller::input>& kv) { 
@@ -332,7 +330,7 @@ void pid_control::controller::start() {
             parent->name, format_string("%s.outputs", name.c_str()), emitter.c_str());
     pd_ctrl_outputs.consumer = make_shared<pd_consumer>(name);
     pd_ctrl_outputs.pd->set_consumer(pd_ctrl_outputs.consumer);
-    k.add_device(pd_ctrl_outputs.pd);
+    robotkernel::add_device(pd_ctrl_outputs.pd);
 
     pds[pd_ctrl_outputs.pd->id()] = pd_ctrl_outputs;
 
@@ -354,11 +352,8 @@ void pid_control::controller::start() {
         add_pds(item, pds);
     }
 
-    // process data inspection
-//TODO    k.add_device(shared_from_this());
-
     if (trigger_dev_name != "") {
-        auto clk_dev = k.get_trigger(trigger_dev_name);
+        auto clk_dev = robotkernel::get_device<trigger>(trigger_dev_name);
         clk_dev->add_trigger(shared_from_this());
 
         if (clk_dev->get_rate() != 0) {
@@ -374,17 +369,12 @@ void pid_control::controller::start() {
 
 //! destroying process data input and trigger
 void pid_control::controller::stop() {
-    kernel& k = *kernel::get_instance();
-
     if (trigger_dev_name != "") {
-        auto clk_dev = k.get_trigger(trigger_dev_name);
+        auto clk_dev = robotkernel::get_device<trigger>(trigger_dev_name);
         clk_dev->remove_trigger(shared_from_this());
     }
 
-    // process data inspection
-   //TODO k.remove_device(shared_from_this());
-
-    k.remove_device(pd_ctrl_outputs.pd);
+    robotkernel::remove_device(pd_ctrl_outputs.pd);
     pd_ctrl_outputs.pd->reset_consumer(pd_ctrl_outputs.consumer);
 
     pd_ctrl_outputs.consumer = nullptr;
@@ -534,16 +524,6 @@ tick_exit:
             output_pd.pd->write(output_pd.provider, 0, &output_pd.local_outputs[0], output_pd.local_outputs.size()); 
     }
 }
-                
-// process data inspection
-void pid_control::controller::get_pdin(service_provider::process_data_inspection::pd_t& pd) {
-}
-
-void pid_control::controller::get_pdout(service_provider::process_data_inspection::pd_t& pd) {
-    const auto& buf = pd_ctrl_outputs.pd->peek();
-    pd.resize(pd_ctrl_outputs.pd->length);
-    memcpy(&pd[0], buf, pd.size());
-}
 
 //! construction
 /*!
@@ -611,80 +591,18 @@ void pid_control::init() {
     }
 }
         
-//! set module state machine to defined state
-/*!
- * \param state requested state
- * \return success or failure
- */
-int pid_control::set_state(module_state_t state) {
-    // get transition
-    uint32_t transition = GEN_STATE(this->state, state);
-
-    switch (transition) {
-        case op_2_safeop:
-        case op_2_preop:
-        case op_2_init:
-        case op_2_boot:
-            // ====> stop sending commands
-            for (auto& d : ctrl_list) {
-                d->stop();
-            }
-            
-            if (state == module_state_safeop)
-                break;
-        case safeop_2_preop:
-        case safeop_2_init:
-        case safeop_2_boot:
-            // ====> stop receiving measurements
-            if (state == module_state_preop)
-                break;
-        case preop_2_init:
-        case preop_2_boot:
-            // ====> deinit devices
-        case init_2_init:
-            // ====> re-/open ethercat device
-            if (state == module_state_init)
-                break;
-        case init_2_boot:
-            break;
-        case boot_2_init:
-        case boot_2_preop:
-        case boot_2_safeop:
-        case boot_2_op:
-            // ====> re-/open ethercat device
-            if (state == module_state_init)
-                break;
-        case init_2_op:
-        case init_2_safeop:
-        case init_2_preop:
-            // ====> initial devices            
-            if (state == module_state_preop)
-                break;
-        case preop_2_op:
-        case preop_2_safeop: {
-            // ====> start receiving measurements
-            if (state == module_state_safeop)
-                break;
-        }
-        case safeop_2_op: {
-            // ====> start sending commands
-            for (auto& d : ctrl_list) {
-                d->start();
-            }
-
-            break;
-        }
-        case op_2_op:
-        case safeop_2_safeop:
-        case preop_2_preop:
-            // ====> do nothing
-            break;
-
-        default:
-            break;
+//! State transition from OP to SAFEOP
+void pid_control::set_state_op_2_safeop() {
+    for (auto& d : ctrl_list) {
+        d->stop();
     }
+}
 
-    return (this->state = state);
+//! State transition from SAFEOP to OP
+void pid_control::set_state_safeop_2_op() {
+    for (auto& d : ctrl_list) {
+        d->start();
+    }
 }
 
 void pid_control::tick() {

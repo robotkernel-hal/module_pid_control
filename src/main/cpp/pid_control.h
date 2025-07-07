@@ -22,21 +22,16 @@
  * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef MODULE_PID_CONTROL_H
-#define MODULE_PID_CONTROL_H
+#ifndef MODULE_PID_CONTROL_PID_CONTROL_H
+#define MODULE_PID_CONTROL_PID_CONTROL_H
 
-#include "robotkernel/module.h"
 #include "robotkernel/module_base.h"
-#include "robotkernel/kernel.h"
 #include "robotkernel/trigger.h"
 #include "robotkernel/process_data.h"
 
 #include "service_provider/process_data_inspection/base.h"
 
 namespace module_pid_control {
-#ifdef EMACS
-}
-#endif
 
 const double DEFAULT_GAIN_PROPORTIONAL = 1.;
 const double DEFAULT_GAIN_INTEGRAL     = 1.;
@@ -191,10 +186,6 @@ class pid_control :
 
                 //! trigger tick
                 void tick();                
-                
-                // process data inspection
-                void get_pdin(service_provider::process_data_inspection::pd_t& pd);
-                void get_pdout(service_provider::process_data_inspection::pd_t& pd);
         };
         
         typedef std::shared_ptr<controller> sp_ctrls_t;
@@ -216,23 +207,19 @@ class pid_control :
         /*
          * parses classes and creates instances.
          */
-        void init();
+        virtual void init() override;
 
-        //! set module state machine to defined state
-        /*!
-         * \param state requested state
-         * \return success or failure
-         */
-        int set_state(module_state_t state);
+        //! State transition from OP to SAFEOP
+        virtual void set_state_op_2_safeop() override;
+
+        //! State transition from SAFEOP to OP
+        virtual void set_state_safeop_2_op() override;
 
         //! trigger tick
-        void tick();                
+        virtual void tick() override;
 };
 
-#ifdef EMACS
-{
-#endif
 }; // namespace module_pid_control
 
-#endif // MODULE_PID_CONTROL_H
+#endif // MODULE_PID_CONTROL__PID_CONTROL_H
 
