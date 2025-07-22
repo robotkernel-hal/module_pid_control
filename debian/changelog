@@ -1,0 +1,78 @@
+module-pid-control (6.0.0~pre1) unstable; urgency=low
+
+  * change: LGPL-V3 and latest rk changes
+  * chore: cleanup
+  * chore: rk6 mods
+  * fix: build against robotkernel 6
+  * Merge branch 'release/5.0.0'
+  * updated example config file
+  * added doc with example
+  * changes for latest robotkernel, using find_pd_offset_and_type from process data now
+  * Update README.md
+  * Update README.md
+  * Update README.md
+  * Update README.md
+  * Update README.md
+  * Update README.md
+  * Update README.md
+  * added example config
+  * switched to conan template
+  * switched to conan template
+  * switching to defaults
+  * switching to defaults
+  * Update README.md
+  * indent test
+  * Update README.md
+  * Update README.md
+  * Update README.md
+  * Update README.md
+  * updated README
+  * Update README.md
+  * updated README
+  * changed build targets
+  * regex does not work on old osl42 compiler, workaround
+  * update conanfile with author
+  * Merge branch 'release/5.0.0' of rmc-github.robotic.dlr.de:robotkernel/module-pid-control into release/5.0.0
+  * added example to README.md
+  * impl process data inspection
+  * added comment
+  * init if not deriving from class
+  * added comment
+  * added architectures
+  * added architectures
+  * fixed jenkinsfile
+  * fixed jenkinsfile
+  * added architectures
+  * added architectures
+  * build: updated build/ci files for cissy 1.0->2.0
+  * build: updated build/ci files for cissy 1.0->2.0
+  * build: updated build/ci files for cissy 1.0->2.0
+  * reworked pid control calc
+  * added ps pd
+  * made overrides and states definable for all process data devices
+  * using individual controller trigger
+  * added some cleanup
+  * parsing classes and instances
+  * added output limit
+  * added integral window
+  * added integral window
+  * pd control seems to work on linmot
+  * added input order
+  * changed name of pc file
+  * working on generic pid control
+  * fixed name change
+  * renamed stuff
+  * renamed stuff
+  * working on linmot
+  * not consumer measurement, only take a look at last written data
+  * generated outputs process data
+  * passing current to target process data
+  * added double to val to set current
+  * finding offsets and datatypes in pd description
+  * added scale
+  * current controller change
+  * first shot
+  * Initial commit
+
+ -- Robert Burger <robert.burger@dlr.de>  Tue, 22 Jul 2025 12:26:04 +0200
+
