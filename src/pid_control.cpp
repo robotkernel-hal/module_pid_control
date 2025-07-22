@@ -8,25 +8,24 @@
 // vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab:
 
 /*
- * This file is part of robotkernel.
+ * This file is part of module_pid_control.
  *
- * robotkernel is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * robotkernel is distributed in the hope that it will be useful,
+ * module_pid_control is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ * 
+ * module_pid_control is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with module_pid_control; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 #include <math.h>
-
-#include <string_util/string_util.h>
 
 #include "pid_control.h"
 #include "robotkernel/exceptions.h"
@@ -37,6 +36,7 @@
 #include <iostream>
 #include <algorithm>
 #include <regex>
+#include <stdexcept>
 
 #if __cplusplus >= 201103L &&                             \
     (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
@@ -60,7 +60,6 @@ MODULE_DEF(pid_control, module_pid_control::pid_control)
 using namespace robotkernel;
 using namespace std;
 using namespace module_pid_control;
-using namespace string_util;
 
 inline double val_to_double(uint8_t *base, const struct pid_control::controller::io_base& item) {
     switch (item.type) {
@@ -263,7 +262,7 @@ template <typename key_type, typename value_type>
 value_type& get_map_entry(std::map<key_type, value_type>& tmp_map, key_type& tmp_key) {
     auto _it = tmp_map.find(tmp_key);
     if (_it == tmp_map.end())
-        throw str_exception_tb("no map entry found!\n");
+        throw runtime_error("no map entry found!\n");
 
     value_type& result = (*_it).second;
     return result;
@@ -306,7 +305,7 @@ void pid_control::controller::start() {
             for (const auto& list_node : pd_node) {
                 for (const auto& map_node : list_node) {
                     emitter << YAML::BeginMap << map_node.first 
-                        << format_string("%s.%s", type_prefix.c_str(), map_node.second.as<string>().c_str()) << YAML::EndMap;
+                        << string_printf("%s.%s", type_prefix.c_str(), map_node.second.as<string>().c_str()) << YAML::EndMap;
                 }
             }
 
@@ -316,18 +315,18 @@ void pid_control::controller::start() {
         input.pd_ctrl_outputs_offset = cc_outputs_struct_length;
         cc_outputs_struct_length += 8 + 8 + 8 + 8 + 8; // val + p + i + d + filter
         
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_value", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "uint32_t" << YAML::Value << format_string("cc_%s_mode", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_p", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_i", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_gain_d", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << format_string("cc_%s_filter", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_value", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "uint32_t" << YAML::Value << string_printf("cc_%s_mode", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_gain_p", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_gain_i", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_gain_d", name.c_str()) << YAML::EndMap;
+        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_filter", name.c_str()) << YAML::EndMap;
     }
 
     emitter << YAML::EndSeq;
 
     pd_ctrl_outputs.pd = make_shared<triple_buffer>(cc_outputs_struct_length, 
-            parent->name, format_string("%s.outputs", name.c_str()), emitter.c_str());
+            parent->name, string_printf("%s.outputs", name.c_str()), emitter.c_str());
     pd_ctrl_outputs.consumer = make_shared<pd_consumer>(name);
     pd_ctrl_outputs.pd->set_consumer(pd_ctrl_outputs.consumer);
     robotkernel::add_device(pd_ctrl_outputs.pd);

@@ -9,3 +9,5 @@ class MainProject(ConanFile):
     exports_sources = ["*", "!.gitignore"]
     requires = "robotkernel/[~6]@robotkernel/unstable", "service_provider_process_data_inspection/[~6]@robotkernel/unstable"
 
+    def source(self):
+        self.run(f"sed 's/AC_INIT(.*/AC_INIT([module_pid_control], [{self.version}], [{self.author}])/' configure.ac.in > configure.ac")

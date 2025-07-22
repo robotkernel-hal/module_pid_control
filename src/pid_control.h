@@ -6,20 +6,21 @@
 // vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab:
 
 /*
- * This file is part of robotkernel.
+ * This file is part of module_pid_control.
  *
- * robotkernel is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * robotkernel is distributed in the hope that it will be useful,
+ * module_pid_control is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ * 
+ * module_pid_control is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with module_pid_control; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 #ifndef MODULE_PID_CONTROL_PID_CONTROL_H
@@ -29,7 +30,7 @@
 #include "robotkernel/trigger.h"
 #include "robotkernel/process_data.h"
 
-#include "service_provider/process_data_inspection/base.h"
+#include "service_provider_process_data_inspection/base.h"
 
 namespace module_pid_control {
 
@@ -43,8 +44,8 @@ const double DEFAULT_GAIN_OUTPUT       = 1.;
 
 const double DEFAULT_LIMIT             = 0.;
 
-using service_provider::process_data_inspection::sp_pd_inspection_t;
-using service_provider::process_data_inspection::pd_inspection;
+using service_provider_process_data_inspection::sp_pd_inspection_t;
+using service_provider_process_data_inspection::pd_inspection;
 
 class pid_control :
     public std::enable_shared_from_this<pid_control>,
