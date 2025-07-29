@@ -27,6 +27,7 @@
 #define MODULE_PID_CONTROL_PID_CONTROL_H
 
 #include "robotkernel/module_base.h"
+#include "robotkernel/trigger_base.h"
 #include "robotkernel/trigger.h"
 #include "robotkernel/process_data.h"
 
@@ -49,7 +50,8 @@ using service_provider_process_data_inspection::pd_inspection;
 
 class pid_control :
     public std::enable_shared_from_this<pid_control>,
-    public robotkernel::module_base
+    public robotkernel::module_base,
+    public robotkernel::trigger_base
 {
     public:
         class controller : 
