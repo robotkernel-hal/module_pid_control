@@ -58,6 +58,7 @@ std::string& replace_string(std::string& s, const std::string& from, const std::
 MODULE_DEF(pid_control, module_pid_control::pid_control)
 
 using namespace robotkernel;
+using namespace robotkernel::helpers;
 using namespace std;
 using namespace module_pid_control;
 
@@ -353,7 +354,7 @@ void pid_control::controller::start() {
 
     if (trigger_dev_name != "") {
         auto clk_dev = robotkernel::get_device<trigger>(trigger_dev_name);
-        clk_dev->add_trigger(shared_from_this());
+        clk_dev->add_trigger(shared_from_this_as<trigger_base>());
 
         if (clk_dev->get_rate() != 0) {
             ts = 1. / clk_dev->get_rate();
@@ -370,7 +371,7 @@ void pid_control::controller::start() {
 void pid_control::controller::stop() {
     if (trigger_dev_name != "") {
         auto clk_dev = robotkernel::get_device<trigger>(trigger_dev_name);
-        clk_dev->remove_trigger(shared_from_this());
+        clk_dev->remove_trigger(shared_from_this_as<trigger_base>());
     }
 
     robotkernel::remove_device(pd_ctrl_outputs.pd);
@@ -558,7 +559,7 @@ void pid_control::init() {
 
     for (const auto& inst : config["instances"]) {
         if (!inst["use_class"]) {
-            auto d = std::make_shared<controller>(shared_from_this(), inst);
+            auto d = std::make_shared<controller>(shared_from_this_as<pid_control>(), inst);
             ctrl_list.push_back(d);
             continue;
         }
@@ -585,7 +586,7 @@ void pid_control::init() {
 #endif
         }
 
-        auto d = std::make_shared<controller>(shared_from_this(), YAML::Load(inst_config));
+        auto d = std::make_shared<controller>(shared_from_this_as<pid_control>(), YAML::Load(inst_config));
         ctrl_list.push_back(d);
     }
 }

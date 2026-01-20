@@ -49,13 +49,13 @@ using service_provider_process_data_inspection::sp_pd_inspection_t;
 using service_provider_process_data_inspection::pd_inspection;
 
 class pid_control :
-    public std::enable_shared_from_this<pid_control>,
+    public virtual robotkernel::shared_base,
     public robotkernel::module_base,
     public robotkernel::trigger_base
 {
     public:
         class controller : 
-            public std::enable_shared_from_this<controller>,
+            public virtual robotkernel::shared_base,
             public robotkernel::trigger_base
         {
             public:
@@ -63,11 +63,11 @@ class pid_control :
 
                 typedef struct io_base {
                     io_base(const YAML::Node& ci_node) {
-                        pd          = get_as<std::string>(ci_node, "pd",         "");
-                        field_name  = get_as<std::string>(ci_node, "field_name", "");
-                        offset      = get_as<uint32_t>   (ci_node, "offset",     0 );
-                        type_str    = get_as<std::string>(ci_node, "type",       "");
-                        scale       = get_as<double>     (ci_node, "scale",      1.);
+                        pd          = robotkernel::helpers::get_as<std::string>(ci_node, "pd",         "");
+                        field_name  = robotkernel::helpers::get_as<std::string>(ci_node, "field_name", "");
+                        offset      = robotkernel::helpers::get_as<uint32_t>   (ci_node, "offset",     0 );
+                        type_str    = robotkernel::helpers::get_as<std::string>(ci_node, "type",       "");
+                        scale       = robotkernel::helpers::get_as<double>     (ci_node, "scale",      1.);
                     }
 
                     virtual ~io_base() {};
@@ -82,13 +82,13 @@ class pid_control :
 
                 typedef struct input : io_base_t {
                     input(const YAML::Node& ci_node) : io_base(ci_node) {
-                        pd          = get_as<std::string>(ci_node, "pd"            );
-                        kp          = get_as<double>     (ci_node, "kp",         DEFAULT_GAIN_PROPORTIONAL);
-                        ki          = get_as<double>     (ci_node, "ki",         DEFAULT_GAIN_INTEGRAL);
-                        kd          = get_as<double>     (ci_node, "kd",         DEFAULT_GAIN_DERIVATIVE);
-                        i_limit     = get_as<double>      (ci_node, "i_limit",   DEFAULT_I_LIMIT);
-                        filter      = get_as<double>     (ci_node, "filter",     DEFAULT_FILTER);
-                        target      = get_as<std::string>(ci_node, "target"        );
+                        pd          = robotkernel::helpers::get_as<std::string>(ci_node, "pd"            );
+                        kp          = robotkernel::helpers::get_as<double>     (ci_node, "kp",         DEFAULT_GAIN_PROPORTIONAL);
+                        ki          = robotkernel::helpers::get_as<double>     (ci_node, "ki",         DEFAULT_GAIN_INTEGRAL);
+                        kd          = robotkernel::helpers::get_as<double>     (ci_node, "kd",         DEFAULT_GAIN_DERIVATIVE);
+                        i_limit     = robotkernel::helpers::get_as<double>      (ci_node, "i_limit",   DEFAULT_I_LIMIT);
+                        filter      = robotkernel::helpers::get_as<double>     (ci_node, "filter",     DEFAULT_FILTER);
+                        target      = robotkernel::helpers::get_as<std::string>(ci_node, "target"        );
                     }
 
                     double kp;                          //!< proportional gain
@@ -109,10 +109,10 @@ class pid_control :
 
                 typedef struct output : io_base_t {
                     output(const YAML::Node& ci_node) : io_base(ci_node) {
-                        pd          = get_as<std::string>(ci_node, "pd"            );
-                        kt          = get_as<double>     (ci_node, "kt",         DEFAULT_GAIN_OUTPUT);
-                        default_val = get_as<double>     (ci_node, "default",    0.);
-                        limit       = get_as<double>     (ci_node, "limit",      DEFAULT_LIMIT);
+                        pd          = robotkernel::helpers::get_as<std::string>(ci_node, "pd"            );
+                        kt          = robotkernel::helpers::get_as<double>     (ci_node, "kt",         DEFAULT_GAIN_OUTPUT);
+                        default_val = robotkernel::helpers::get_as<double>     (ci_node, "default",    0.);
+                        limit       = robotkernel::helpers::get_as<double>     (ci_node, "limit",      DEFAULT_LIMIT);
                     }
 
                     double kt;                          //!< gain
@@ -123,8 +123,8 @@ class pid_control :
 
                 typedef struct override_state : io_base_t {
                     override_state(const YAML::Node& ci_node) : io_base(ci_node) {
-                        value_str = get_as<std::string>(ci_node, "value", "");
-                        mask_str  = get_as<std::string>(ci_node, "mask", "");
+                        value_str = robotkernel::helpers::get_as<std::string>(ci_node, "value", "");
+                        mask_str  = robotkernel::helpers::get_as<std::string>(ci_node, "mask", "");
                     }
 
                     std::string value_str;              //!< default value for overrides/states
