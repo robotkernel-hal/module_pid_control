@@ -1,4 +1,4 @@
-module-pid-control (6.0.0~pre1) unstable; urgency=low
+module-pid-control (6.0.0) stable; urgency=low
 
   * change: LGPL-V3 and latest rk changes
   * chore: cleanup
