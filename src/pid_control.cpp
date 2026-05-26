@@ -242,7 +242,7 @@ inline void add_pds(T& item, std::map<std::string, pd_type>& pds) {
         if (os.mask_str != "") {
             local_convert_str_val(os.type, os.mask_str, os.mask);
         }
-    } catch (std::bad_cast exp) {}
+    } catch (const std::bad_cast& exp) {}
 }
 
 template <typename T, typename pd_type>
@@ -302,12 +302,10 @@ void pid_control::controller::start() {
 
             string type_prefix = output.pd;
 
-            YAML::Node pd_node = YAML::Load(output_pd.pd->process_data_definition);
-            for (const auto& list_node : pd_node) {
-                for (const auto& map_node : list_node) {
-                    emitter << YAML::BeginMap << map_node.first 
-                        << string_printf("%s.%s", type_prefix.c_str(), map_node.second.as<string>().c_str()) << YAML::EndMap;
-                }
+            auto pd_def = robotkernel::get_pd_definition(output_pd.pd->process_data_definition);
+            YAML::Node pd_node = YAML::Load(pd_def);
+            for (const auto& entry : pd_node) {
+                emitter << entry;
             }
 
             processed_pd.push_back(output.pd);
@@ -316,18 +314,26 @@ void pid_control::controller::start() {
         input.pd_ctrl_outputs_offset = cc_outputs_struct_length;
         cc_outputs_struct_length += 8 + 8 + 8 + 8 + 8; // val + p + i + d + filter
         
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_value", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "uint32_t" << YAML::Value << string_printf("cc_%s_mode", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_gain_p", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_gain_i", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_gain_d", name.c_str()) << YAML::EndMap;
-        emitter << YAML::BeginMap << YAML::Key << "double" << YAML::Value << string_printf("cc_%s_filter", name.c_str()) << YAML::EndMap;
+        emitter << YAML::Key << string_printf("cc_%s_value", name.c_str())  << YAML::Value << 
+            YAML::BeginMap << YAML::Key << "type" << YAML::Value << "double" <<   YAML::EndMap;
+        emitter << YAML::Key << string_printf("cc_%s_mode", name.c_str())   << YAML::Value << 
+            YAML::BeginMap << YAML::Key << "type" << YAML::Value << "uint32_t" << YAML::EndMap;
+        emitter << YAML::Key << string_printf("cc_%s_gain_p", name.c_str()) << YAML::Value << 
+            YAML::BeginMap << YAML::Key << "type" << YAML::Value << "double" <<   YAML::EndMap;
+        emitter << YAML::Key << string_printf("cc_%s_gain_i", name.c_str()) << YAML::Value << 
+            YAML::BeginMap << YAML::Key << "type" << YAML::Value << "double" <<   YAML::EndMap;
+        emitter << YAML::Key << string_printf("cc_%s_gain_d", name.c_str()) << YAML::Value << 
+            YAML::BeginMap << YAML::Key << "type" << YAML::Value << "double" <<   YAML::EndMap;
+        emitter << YAML::Key << string_printf("cc_%s_filter", name.c_str()) << YAML::Value << 
+            YAML::BeginMap << YAML::Key << "type" << YAML::Value << "double" <<   YAML::EndMap;
     }
 
     emitter << YAML::EndSeq;
 
+    string outputs_definition_name = string_printf("%s.outputs.definition", name.c_str());
+    robotkernel::add_pd_definition(outputs_definition_name, emitter.c_str());
     pd_ctrl_outputs.pd = make_shared<triple_buffer>(cc_outputs_struct_length, 
-            parent->name, string_printf("%s.outputs", name.c_str()), emitter.c_str());
+            parent->name, string_printf("%s.outputs", name.c_str()), outputs_definition_name);
     pd_ctrl_outputs.consumer = make_shared<pd_consumer>(name);
     pd_ctrl_outputs.pd->set_consumer(pd_ctrl_outputs.consumer);
     robotkernel::add_device(pd_ctrl_outputs.pd);
